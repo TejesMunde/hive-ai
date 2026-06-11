@@ -1,0 +1,725 @@
+{
+  "seed": 42,
+  "decisions": [
+    {
+      "id": "d001",
+      "what": "Chose PostgreSQL for primary OLTP store",
+      "why": "Strong ACID guarantees and JSONB support fit our mixed relational + document workload",
+      "domain": "database"
+    },
+    {
+      "id": "d002",
+      "what": "Rejected MongoDB for primary store",
+      "why": "Lack of multi-document transactions caused inventory desync in 2024 pilot",
+      "domain": "database"
+    },
+    {
+      "id": "d003",
+      "what": "Selected Redis for session cache",
+      "why": "Sub-millisecond reads required for auth token validation under 10k rps",
+      "domain": "database"
+    },
+    {
+      "id": "d004",
+      "what": "DuckDB used for analytical exports",
+      "why": "In-process OLAP avoids spinning up a warehouse for monthly reports",
+      "domain": "database"
+    },
+    {
+      "id": "d005",
+      "what": "SQLite chosen for local dev fixtures",
+      "why": "Zero-config single-file database accelerates contributor onboarding",
+      "domain": "database"
+    },
+    {
+      "id": "d006",
+      "what": "FastAPI selected for HTTP layer",
+      "why": "Native async, OpenAPI generation, and pydantic validation cut boilerplate vs Flask",
+      "domain": "framework"
+    },
+    {
+      "id": "d007",
+      "what": "Rejected Django for this service",
+      "why": "Monolithic ORM and admin coupling fights our event-driven design",
+      "domain": "framework"
+    },
+    {
+      "id": "d008",
+      "what": "Starlette internals exposed for streaming endpoints",
+      "why": "FastAPI's StreamingResponse insufficient for backpressure-aware SSE",
+      "domain": "framework"
+    },
+    {
+      "id": "d009",
+      "what": "JWT chosen for stateless auth across microservices",
+      "why": "Avoids central session lookup; signature verify at edge scales horizontally",
+      "domain": "auth"
+    },
+    {
+      "id": "d010",
+      "what": "Refresh tokens stored in HttpOnly cookies",
+      "why": "Mitigates XSS exfiltration vs localStorage; CSRF guarded by SameSite=Lax",
+      "domain": "auth"
+    },
+    {
+      "id": "d011",
+      "what": "Argon2id picked over bcrypt for password hashing",
+      "why": "Memory-hard parameters resist GPU brute force in 2025 threat models",
+      "domain": "auth"
+    },
+    {
+      "id": "d012",
+      "what": "OAuth2 PKCE flow enforced for native clients",
+      "why": "Authorization code interception attacks on public clients require PKCE",
+      "domain": "auth"
+    },
+    {
+      "id": "d013",
+      "what": "Kubernetes selected for production orchestration",
+      "why": "Multi-tenant workloads need pod-level isolation and rolling deploys",
+      "domain": "deployment"
+    },
+    {
+      "id": "d014",
+      "what": "Rejected serverless for hot path",
+      "why": "Cold-start P99 exceeded 800ms \u2014 unacceptable for synchronous API",
+      "domain": "deployment"
+    },
+    {
+      "id": "d015",
+      "what": "Helm charts source of truth, not raw YAML",
+      "why": "Templating prevents drift across staging/prod and parameterizes secrets",
+      "domain": "deployment"
+    },
+    {
+      "id": "d016",
+      "what": "ArgoCD chosen for GitOps deploy",
+      "why": "Declarative reconciliation surfaces drift; PR-driven prod changes",
+      "domain": "deployment"
+    },
+    {
+      "id": "d017",
+      "what": "OpenTelemetry adopted for distributed tracing",
+      "why": "Vendor-neutral instrumentation avoids re-wiring on backend swaps",
+      "domain": "observability"
+    },
+    {
+      "id": "d018",
+      "what": "Loki picked over Elasticsearch for logs",
+      "why": "10x cheaper storage for our log volume; label-based queries suffice",
+      "domain": "observability"
+    },
+    {
+      "id": "d019",
+      "what": "Prometheus + Mimir for metrics at scale",
+      "why": "Long-term storage with PromQL compatibility; sharded for horizontal scale",
+      "domain": "observability"
+    },
+    {
+      "id": "d020",
+      "what": "Sentry captures application errors",
+      "why": "Source-mapped stack traces and release tagging beat raw log search",
+      "domain": "observability"
+    },
+    {
+      "id": "d021",
+      "what": "Kafka chosen for event backbone",
+      "why": "Replay semantics and partition ordering required for billing audit trail",
+      "domain": "messaging"
+    },
+    {
+      "id": "d022",
+      "what": "Rejected RabbitMQ for primary bus",
+      "why": "Lacks log replay; consumer-acknowledge model loses messages on consumer crashes",
+      "domain": "messaging"
+    },
+    {
+      "id": "d023",
+      "what": "NATS selected for control-plane RPC",
+      "why": "Sub-millisecond pub/sub for ephemeral coordination signals",
+      "domain": "messaging"
+    },
+    {
+      "id": "d024",
+      "what": "Pytest as primary test runner",
+      "why": "Fixture composition and parametrization reduce duplication vs unittest",
+      "domain": "testing"
+    },
+    {
+      "id": "d025",
+      "what": "Integration tests hit real Postgres in CI",
+      "why": "Mocked tests masked migration failure in Q3 2024 incident",
+      "domain": "testing"
+    },
+    {
+      "id": "d026",
+      "what": "Property-based tests via Hypothesis for parsers",
+      "why": "Random input generation found 11 edge cases unit tests missed",
+      "domain": "testing"
+    },
+    {
+      "id": "d027",
+      "what": "E2E tests run nightly, not per-PR",
+      "why": "30-min runtime makes per-PR enforcement a merge bottleneck",
+      "domain": "testing"
+    },
+    {
+      "id": "d028",
+      "what": "React Server Components for marketing pages",
+      "why": "Zero client JS on landing pages improves LCP from 2.1s to 0.6s",
+      "domain": "frontend"
+    },
+    {
+      "id": "d029",
+      "what": "Tailwind picked over CSS-in-JS",
+      "why": "Atomic classes ship less CSS and avoid runtime style serialization",
+      "domain": "frontend"
+    },
+    {
+      "id": "d030",
+      "what": "Tanstack Query handles server state",
+      "why": "Cache invalidation and refetch policies cleaner than Redux for our shape",
+      "domain": "frontend"
+    },
+    {
+      "id": "d031",
+      "what": "Airflow chosen for batch orchestration",
+      "why": "DAG-as-code and rich operator ecosystem fit our ETL surface",
+      "domain": "data_pipeline"
+    },
+    {
+      "id": "d032",
+      "what": "dbt models source of truth for transforms",
+      "why": "SQL-first transformations with lineage docs beat hand-rolled scripts",
+      "domain": "data_pipeline"
+    },
+    {
+      "id": "d033",
+      "what": "Iceberg adopted as table format",
+      "why": "Schema evolution and time-travel queries unblock GDPR delete-by-id at scale",
+      "domain": "data_pipeline"
+    },
+    {
+      "id": "d034",
+      "what": "ONNX runtime for production inference",
+      "why": "Decouples training framework from serving; CPU SIMD kernels match GPU latency at our batch size",
+      "domain": "ml"
+    },
+    {
+      "id": "d035",
+      "what": "HNSW index for vector recall",
+      "why": "Logarithmic query time at our 500k corpus; recall@10 above 0.95 with M=16",
+      "domain": "ml"
+    },
+    {
+      "id": "d036",
+      "what": "Rejected fine-tuning for entity extraction",
+      "why": "Few-shot prompting matched fine-tuned F1 within 2 points at 10% the cost",
+      "domain": "ml"
+    },
+    {
+      "id": "d037",
+      "what": "bge-small embeddings chosen over MiniLM",
+      "why": "+6 MTEB points at same 384 dim and 10 percent runtime overhead",
+      "domain": "ml"
+    },
+    {
+      "id": "d038",
+      "what": "Cross-encoder reranker added after dense retrieval",
+      "why": "Lifts top-3 recall from 0.71 to 0.89 on internal eval set",
+      "domain": "ml"
+    }
+  ],
+  "queries": [
+    {
+      "query": "server state management reasoning",
+      "expected_id": "d030",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "lightweight dev fixture store",
+      "expected_id": "d005",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "what powers persistent storage",
+      "expected_id": "d001",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "why this open table format",
+      "expected_id": "d033",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "GitOps tool selection",
+      "expected_id": "d016",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "streaming endpoint implementation choice",
+      "expected_id": "d008",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "how analytics transformations are managed",
+      "expected_id": "d032",
+      "category": "paraphrase"
+    },
+    {
+      "query": "why this inference engine",
+      "expected_id": "d034",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "tailwind picked reasoning",
+      "expected_id": "d029",
+      "category": "exact"
+    },
+    {
+      "query": "why not lambda for the API",
+      "expected_id": "d014",
+      "category": "paraphrase"
+    },
+    {
+      "query": "pytest as reasoning",
+      "expected_id": "d024",
+      "category": "exact"
+    },
+    {
+      "query": "jwt chosen reasoning",
+      "expected_id": "d009",
+      "category": "exact"
+    },
+    {
+      "query": "what controls cluster sync",
+      "expected_id": "d016",
+      "category": "paraphrase"
+    },
+    {
+      "query": "why this tracing standard",
+      "expected_id": "d017",
+      "category": "paraphrase"
+    },
+    {
+      "query": "vector search algorithm choice",
+      "expected_id": "d035",
+      "category": "paraphrase"
+    },
+    {
+      "query": "lightweight messaging for control plane",
+      "expected_id": "d023",
+      "category": "paraphrase"
+    },
+    {
+      "query": "batch scheduler choice",
+      "expected_id": "d031",
+      "category": "paraphrase"
+    },
+    {
+      "query": "rejected django reasoning",
+      "expected_id": "d007",
+      "category": "exact"
+    },
+    {
+      "query": "helm charts reasoning",
+      "expected_id": "d015",
+      "category": "exact"
+    },
+    {
+      "query": "how we test parser correctness",
+      "expected_id": "d026",
+      "category": "paraphrase"
+    },
+    {
+      "query": "why we use this Python test runner",
+      "expected_id": "d024",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "SQL transformation framework choice",
+      "expected_id": "d032",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "why we did not fine-tune the NER model",
+      "expected_id": "d036",
+      "category": "paraphrase"
+    },
+    {
+      "query": "why not RabbitMQ",
+      "expected_id": "d022",
+      "category": "paraphrase"
+    },
+    {
+      "query": "why a reranker",
+      "expected_id": "d038",
+      "category": "paraphrase"
+    },
+    {
+      "query": "argocd chosen reasoning",
+      "expected_id": "d016",
+      "category": "exact"
+    },
+    {
+      "query": "workflow orchestration tool reasoning",
+      "expected_id": "d031",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "what database powers local development",
+      "expected_id": "d005",
+      "category": "paraphrase"
+    },
+    {
+      "query": "reasoning behind KDF choice",
+      "expected_id": "d011",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "how do we keep metrics history",
+      "expected_id": "d019",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "model serving runtime choice",
+      "expected_id": "d034",
+      "category": "paraphrase"
+    },
+    {
+      "query": "distributed tracing instrumentation choice",
+      "expected_id": "d017",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "why we chose our API framework",
+      "expected_id": "d006",
+      "category": "paraphrase"
+    },
+    {
+      "query": "styling approach reasoning",
+      "expected_id": "d029",
+      "category": "paraphrase"
+    },
+    {
+      "query": "SSR strategy for landing pages",
+      "expected_id": "d028",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "how does cross-service authentication work",
+      "expected_id": "d009",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "why end-to-end tests are not on every PR",
+      "expected_id": "d027",
+      "category": "paraphrase"
+    },
+    {
+      "query": "how do we run analytical queries",
+      "expected_id": "d004",
+      "category": "paraphrase"
+    },
+    {
+      "query": "durable message log choice",
+      "expected_id": "d021",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "client data fetching library choice",
+      "expected_id": "d030",
+      "category": "paraphrase"
+    },
+    {
+      "query": "integration test database policy",
+      "expected_id": "d025",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "why drop down below the framework for SSE",
+      "expected_id": "d008",
+      "category": "paraphrase"
+    },
+    {
+      "query": "loki picked reasoning",
+      "expected_id": "d018",
+      "category": "exact"
+    },
+    {
+      "query": "why we avoid in-browser local storage for tokens",
+      "expected_id": "d010",
+      "category": "paraphrase"
+    },
+    {
+      "query": "not the Mongo decision, the relational one",
+      "expected_id": "d001",
+      "category": "negation"
+    },
+    {
+      "query": "metrics storage architecture",
+      "expected_id": "d019",
+      "category": "paraphrase"
+    },
+    {
+      "query": "native client OAuth handling",
+      "expected_id": "d012",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "exception aggregation reasoning",
+      "expected_id": "d020",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "why event streaming platform",
+      "expected_id": "d021",
+      "category": "paraphrase"
+    },
+    {
+      "query": "where do refresh tokens live in the browser",
+      "expected_id": "d010",
+      "category": "paraphrase"
+    },
+    {
+      "query": "rejected rabbitmq reasoning",
+      "expected_id": "d022",
+      "category": "exact"
+    },
+    {
+      "query": "what handles ephemeral key-value lookups",
+      "expected_id": "d003",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "why container orchestration",
+      "expected_id": "d013",
+      "category": "paraphrase"
+    },
+    {
+      "query": "embedded analytics engine choice",
+      "expected_id": "d004",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "log aggregation backend reasoning",
+      "expected_id": "d018",
+      "category": "paraphrase"
+    },
+    {
+      "query": "opposite of stateless auth \u2014 server sessions",
+      "expected_id": "d003",
+      "category": "negation"
+    },
+    {
+      "query": "test framework choice",
+      "expected_id": "d024",
+      "category": "paraphrase"
+    },
+    {
+      "query": "why we did not pick MongoDB",
+      "expected_id": "d002",
+      "category": "paraphrase"
+    },
+    {
+      "query": "fuzzing approach for input handlers",
+      "expected_id": "d026",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "why stateless tokens",
+      "expected_id": "d009",
+      "category": "paraphrase"
+    },
+    {
+      "query": "error tracking tool choice",
+      "expected_id": "d020",
+      "category": "paraphrase"
+    },
+    {
+      "query": "mobile and desktop auth flow choice",
+      "expected_id": "d012",
+      "category": "paraphrase"
+    },
+    {
+      "query": "why this sentence encoder",
+      "expected_id": "d037",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "internal RPC fabric reasoning",
+      "expected_id": "d023",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "why Django was not chosen",
+      "expected_id": "d007",
+      "category": "paraphrase"
+    },
+    {
+      "query": "why no mocked database in tests",
+      "expected_id": "d025",
+      "category": "paraphrase"
+    },
+    {
+      "query": "hashing scheme resistant to GPU attacks",
+      "expected_id": "d011",
+      "category": "paraphrase"
+    },
+    {
+      "query": "reasoning against full-stack web framework",
+      "expected_id": "d007",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "text embedding model choice",
+      "expected_id": "d037",
+      "category": "paraphrase"
+    },
+    {
+      "query": "not the streaming platform, the lightweight RPC",
+      "expected_id": "d023",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "client-side token storage choice",
+      "expected_id": "d010",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "starlette internals reasoning",
+      "expected_id": "d008",
+      "category": "exact"
+    },
+    {
+      "query": "AMQP versus log-based messaging",
+      "expected_id": "d022",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "authentication flow for mobile apps",
+      "expected_id": "d012",
+      "category": "paraphrase"
+    },
+    {
+      "query": "why this password hash algorithm",
+      "expected_id": "d011",
+      "category": "paraphrase"
+    },
+    {
+      "query": "why did we pick our database",
+      "expected_id": "d001",
+      "category": "paraphrase"
+    },
+    {
+      "query": "why not Elasticsearch for logs",
+      "expected_id": "d018",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "approximate nearest neighbor structure",
+      "expected_id": "d035",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "why not styled-components",
+      "expected_id": "d029",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "how do we manage k8s manifests",
+      "expected_id": "d015",
+      "category": "paraphrase"
+    },
+    {
+      "query": "browser test cadence reasoning",
+      "expected_id": "d027",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "system that records exceptions from prod",
+      "expected_id": "d020",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "production runtime platform reasoning",
+      "expected_id": "d013",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "prompt versus fine-tune decision",
+      "expected_id": "d036",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "key-derivation function reasoning",
+      "expected_id": "d011",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "rejected mongodb reasoning",
+      "expected_id": "d002",
+      "category": "exact"
+    },
+    {
+      "query": "lakehouse table format reasoning",
+      "expected_id": "d033",
+      "category": "paraphrase"
+    },
+    {
+      "query": "kubernetes config templating choice",
+      "expected_id": "d015",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "serverless versus container decision",
+      "expected_id": "d014",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "two-stage retrieval second pass",
+      "expected_id": "d038",
+      "category": "paraphrase"
+    },
+    {
+      "query": "issues with document database for our use case",
+      "expected_id": "d002",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "where do session tokens live",
+      "expected_id": "d003",
+      "category": "paraphrase"
+    },
+    {
+      "query": "why server components for static pages",
+      "expected_id": "d028",
+      "category": "paraphrase"
+    },
+    {
+      "query": "two-stage retrieval reasoning",
+      "expected_id": "d038",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "what serves HTTP requests",
+      "expected_id": "d006",
+      "category": "vocab_gap"
+    },
+    {
+      "query": "ANN index reasoning",
+      "expected_id": "d035",
+      "category": "vocab_gap"
+    }
+  ],
+  "stats": {
+    "n_decisions": 38,
+    "n_queries": 96,
+    "by_category": {
+      "vocab_gap": 42,
+      "exact": 10,
+      "negation": 2,
+      "paraphrase": 42
+    }
+  }
+}
