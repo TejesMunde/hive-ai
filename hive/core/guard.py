@@ -18,6 +18,7 @@ def validate(record_type: str, project: str, data: dict) -> tuple[bool, str]:
         "decision":  ["what"],
         "snapshot":  ["file_structure"],
         "open_task": ["description"],
+        "dead_end":  ["what_tried", "why_failed"],
     }
     fields = required.get(record_type, [])
     for field in fields:
@@ -30,6 +31,7 @@ def validate(record_type: str, project: str, data: dict) -> tuple[bool, str]:
         "decision":  "what",
         "snapshot":  "file_structure",
         "open_task": "description",
+        "dead_end":  "what_tried",
     }.get(record_type, "")
 
     if main_field:
@@ -80,6 +82,14 @@ def validate(record_type: str, project: str, data: dict) -> tuple[bool, str]:
             return False, (
                 f"Too similar to existing task "
                 f"({int(fuzzy['score']*100)}% match): '{fuzzy['description'][:70]}'"
+            )
+
+    if record_type == "dead_end":
+        fuzzy = _find_fuzzy_duplicate_dead_end(project, data["what_tried"])
+        if fuzzy:
+            return False, (
+                f"Too similar to existing dead end "
+                f"({int(fuzzy['score']*100)}% match): '{fuzzy['what_tried'][:70]}'"
             )
 
     # Rule 6: why field warning — not a rejection, just flagged in reason
@@ -169,6 +179,20 @@ def _find_fuzzy_duplicate_task(project: str, description: str) -> dict | None:
         score = _similarity(description, row["description"])
         if score >= FUZZY_THRESHOLD:
             return {"description": row["description"], "score": score}
+    return None
+
+
+def _find_fuzzy_duplicate_dead_end(project: str, what_tried: str) -> dict | None:
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT what_tried FROM dead_ends WHERE project=?", (project,)
+    ).fetchall()
+    conn.close()
+
+    for row in rows:
+        score = _similarity(what_tried, row["what_tried"])
+        if score >= FUZZY_THRESHOLD:
+            return {"what_tried": row["what_tried"], "score": score}
     return None
 
 
