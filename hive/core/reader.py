@@ -238,3 +238,52 @@ def _iso_rank(ts: str) -> float:
         return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
     except Exception:
         return 0.0
+
+
+def get_provenance(decision_id: str) -> dict | None:
+    """
+    Phase 3: on-demand provenance for a decision. Returns the decision row, the
+    dead ends that point to it (approaches ruled out before it), and the 1-hop
+    decision it superseded. None if the decision does not exist.
+
+    Deliberately NOT part of read_memory's hot/warm budget — provenance is
+    pulled explicitly when an agent asks "what was considered before this?",
+    not dumped into every context slice.
+
+    Shape:
+      {
+        "decision":   {...},
+        "dead_ends":  [ {id, what_tried, why_failed, agent, created_at}, ... ],
+        "supersedes": {id, what, why, created_at} | None,
+      }
+    """
+    conn = get_connection()
+    try:
+        d = conn.execute(
+            "SELECT id, project, what, why, agent, created_at, confidence, supersedes_id "
+            "FROM decisions WHERE id=?",
+            (decision_id,),
+        ).fetchone()
+        if d is None:
+            return None
+
+        dead_ends = conn.execute(
+            "SELECT id, what_tried, why_failed, agent, created_at "
+            "FROM dead_ends WHERE chosen_decision_id=? ORDER BY created_at ASC",
+            (decision_id,),
+        ).fetchall()
+
+        supersedes = None
+        if d["supersedes_id"]:
+            supersedes = conn.execute(
+                "SELECT id, what, why, created_at FROM decisions WHERE id=?",
+                (d["supersedes_id"],),
+            ).fetchone()
+
+        return {
+            "decision":   dict(d),
+            "dead_ends":  [dict(r) for r in dead_ends],
+            "supersedes": dict(supersedes) if supersedes else None,
+        }
+    finally:
+        conn.close()

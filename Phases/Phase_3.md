@@ -1,6 +1,7 @@
 # Phase 3 — Dead Ends, Decision Provenance, Agent Global Config
 
-**Status:** 📐 DESIGN (no code yet — schema-first, per review guidance)
+**Status:** ✅ IMPLEMENTED on branch `phase-3-dead-ends` (test_day8 green; days 1–7
++ retrieval benchmark unchanged). Schema-first, per review guidance.
 **Goal:** turn the memory from "what we decided" into "what we decided *and what we
 ruled out and why*", and make Hive discoverable to any agent on the machine.
 
@@ -160,13 +161,13 @@ Notes:
 
 ## 5. Acceptance criteria (proposed)
 
-- [ ] `dead_ends` table + `decisions.supersedes_id` created idempotently in `setup.py`
-- [ ] `write_memory("dead_end", ...)` flows through the guard (no bypass) + audit
-- [ ] `get_provenance(decision_id)` returns the decision, its dead ends, and the
+- [x] `dead_ends` table + `decisions.supersedes_id` created idempotently in `setup.py`
+- [x] `write_memory("dead_end", ...)` flows through the guard (no bypass) + audit
+- [x] `get_provenance(decision_id)` returns the decision, its dead ends, and the
       decision it superseded
-- [ ] Deleting a decision nulls the links, never erases dead ends
-- [ ] `hive init` writes the Hive block to global rule files; running it twice is
+- [x] Deleting a decision nulls the links, never erases dead ends
+- [x] `hive init` writes the Hive block to global rule files; running it twice is
       a no-op (no duplication)
-- [ ] `test_day8.py` covers: dead-end write+guard, provenance round-trip,
-      idempotent re-init
-- [ ] Retrieval benchmark unchanged (dead ends must not pollute decision recall)
+- [x] `test_day8.py` covers: dead-end write+guard, provenance round-trip,
+      delete-nulls, idempotent re-init
+- [x] Retrieval benchmark unchanged (dead ends must not pollute decision recall)

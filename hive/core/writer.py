@@ -7,11 +7,17 @@ from hive.core.policy import category_of, policy_action, record_outcome
 from hive.core.audit import log as audit_log
 
 
+def _decision_exists(conn, decision_id: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM decisions WHERE id=?", (decision_id,)
+    ).fetchone() is not None
+
+
 def write_memory(record_type: str, project: str, data: dict) -> dict:
     """
     The only way to write anything to Hive memory.
 
-    record_type : 'decision' | 'snapshot' | 'open_task'
+    record_type : 'decision' | 'snapshot' | 'open_task' | 'dead_end'
     project     : project slug, e.g. 'hive-api'
     data        : dict with fields for that record type
 
@@ -23,7 +29,7 @@ def write_memory(record_type: str, project: str, data: dict) -> dict:
     record is dropped without going through staging — learned from history.
     """
 
-    if record_type not in ("decision", "snapshot", "open_task"):
+    if record_type not in ("decision", "snapshot", "open_task", "dead_end"):
         audit_log(project, "write_rejected",
                   {"type": record_type, "reason": "unknown_record_type"})
         return {"status": "rejected", "id": None,
@@ -49,11 +55,21 @@ def write_memory(record_type: str, project: str, data: dict) -> dict:
     conn      = get_connection()
 
     try:
+        # Phase 3: reject dangling decision references up front.
+        sup    = (data.get("supersedes_id") or "").strip() or None
+        chosen = (data.get("chosen_decision_id") or "").strip() or None
+        for ref in (sup, chosen):
+            if ref and not _decision_exists(conn, ref):
+                audit_log(project, "write_rejected",
+                          {"type": record_type, "reason": f"unknown decision ref: {ref}"})
+                return {"status": "rejected", "id": None,
+                        "reason": f"Referenced decision does not exist: '{ref}'"}
+
         if record_type == "decision":
             conn.execute(
                 """INSERT INTO decisions
-                   (id, project, what, why, agent, created_at, confidence)
-                   VALUES (?,?,?,?,?,?,?)""",
+                   (id, project, what, why, agent, created_at, confidence, supersedes_id)
+                   VALUES (?,?,?,?,?,?,?,?)""",
                 (
                     record_id, project,
                     data.get("what", "").strip(),
@@ -61,6 +77,7 @@ def write_memory(record_type: str, project: str, data: dict) -> dict:
                     data.get("agent", "unknown"),
                     now,
                     data.get("confidence", 1.0),
+                    sup,
                 ),
             )
 
@@ -89,6 +106,23 @@ def write_memory(record_type: str, project: str, data: dict) -> dict:
                     data.get("assigned_agent", ""),
                     "open",
                     now,
+                ),
+            )
+
+        elif record_type == "dead_end":
+            conn.execute(
+                """INSERT INTO dead_ends
+                   (id, project, what_tried, why_failed, chosen_decision_id,
+                    agent, created_at, confidence)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (
+                    record_id, project,
+                    data.get("what_tried", "").strip(),
+                    data.get("why_failed", "").strip(),
+                    chosen,
+                    data.get("agent", "unknown"),
+                    now,
+                    data.get("confidence", 1.0),
                 ),
             )
 
@@ -191,6 +225,19 @@ def promote_from_staging(staging_id: str) -> dict:
                  data.get("description",    "").strip(),
                  data.get("assigned_agent", ""),
                  "open", now),
+            )
+        elif rtype == "dead_end":
+            conn.execute(
+                """INSERT INTO dead_ends
+                   (id, project, what_tried, why_failed, chosen_decision_id,
+                    agent, created_at, confidence)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (record_id, project,
+                 data.get("what_tried", "").strip(),
+                 data.get("why_failed", "").strip(),
+                 (data.get("chosen_decision_id") or "").strip() or None,
+                 data.get("agent", "human-reviewed"),
+                 now, 1.0),
             )
 
         conn.execute("DELETE FROM staging WHERE id=?", (staging_id,))

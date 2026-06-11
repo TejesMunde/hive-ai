@@ -22,12 +22,13 @@ sessions regardless of which agent is used.
 H.I.V.E/
   hive/
     __init__.py          ← public API: init_db, get_connection, write_memory,
-                            read_memory, close_task, promote/reject_from_staging
-    db/setup.py          ← SQLite init, 8 tables, indexes, get_connection()
+                            read_memory, get_provenance, close_task,
+                            promote/reject_from_staging
+    db/setup.py          ← SQLite init, 9 tables (+ dead_ends), migrations, get_connection()
     core/
       guard.py           ← 6 write-guard rules, validates every record pre-commit
       writer.py          ← write_memory, close_task, promote/reject staging
-      reader.py          ← read_memory: hot + warm tiers, IDF rank + hybrid rerank
+      reader.py          ← read_memory: hot + warm tiers, IDF rank + hybrid rerank; get_provenance
       normalize.py       ← case-fold, stopword drop, suffix stemmer, synonym map
       dense.py           ← dense retrieval + RRF hybrid (pin TF-IDF #1 + top-K head)
       embedder.py        ← fastembed wrapper (bge-small-en-v1.5, 384-dim)
@@ -36,8 +37,9 @@ H.I.V.E/
     cli/
       staging.py         ← staging review CLI: list/accept/reject/clear/stats/tune/review
       audit.py           ← audit log CLI: tail/counts/fails
+      init.py            ← `hive init`: idempotent global-config injection (Phase 3)
   tests/
-    test_day1.py … test_day7.py   ← per-day end-to-end tests
+    test_day1.py … test_day8.py   ← per-day end-to-end tests
     bench_recall.py      ← tfidf vs dense vs hybrid: Recall@1/@3, MRR, latency
     bench_rerank.py      ← cross-encoder rerank delta over hybrid
     bench_scale.py       ← recall + latency vs corpus size (K distractors)
@@ -74,8 +76,19 @@ build log in `Phases/Phase_1.md`.
 
 Milestone met: **hybrid beats the TF-IDF baseline on every metric** (79.2/91.7/0.856
 vs 74.0/83.3/0.803) and holds that lead across 54× corpus growth (`bench_scale.py`);
-cross-encoder evaluated and rejected. Next: **Phase 3** (dead-ends table, decision
-provenance, agent global config) on the user's go-ahead.
+cross-encoder evaluated and rejected.
+
+**Phase 3 — IMPLEMENTED on branch `phase-3-dead-ends` (pending merge).** Design +
+build notes in `Phases/Phase_3.md`.
+- `dead_ends` table + `decisions.supersedes_id`, added idempotently in `setup.py`
+  (PRAGMA-checked `ALTER` migrates pre-Phase-3 DBs).
+- `write_memory("dead_end", …)` flows through the guard (no bypass); dangling
+  `chosen_decision_id` / `supersedes_id` rejected.
+- `get_provenance(decision_id)` → decision + its dead ends + 1-hop supersession,
+  on-demand (NOT in the hot/warm budget — retrieval benchmark unmoved).
+- `python -m hive.cli.init` injects an idempotent, marker-wrapped Hive block into
+  global agent rule files (`~/.claude/CLAUDE.md`, …) — re-running never duplicates.
+- `tests/test_day8.py` green; days 1–7 + `bench_recall` unchanged.
 
 ---
 
@@ -234,18 +247,24 @@ A flagged write does NOT get silently dropped. The writer looks up
 `write_memory` returns one of: `committed | staged | auto_rejected | rejected`.
 Review staged records: `python -m hive.cli.staging list`
 
+Record types: `decision | snapshot | open_task | dead_end`. A `dead_end` needs
+`what_tried` + `why_failed` (same vague + fuzzy-dup checks); a dangling
+`chosen_decision_id` / `supersedes_id` is rejected outright — the referenced
+decision must exist.
+
 **Never add a bypass flag or skip the guard for any write path, including tests.**
 One corrupt record poisons every future agent call that retrieves it.
 
 ---
 
-## Storage — SQLite, 8 tables
+## Storage — SQLite, 9 tables
 
 | Table | Role |
 |---|---|
-| `decisions`           | committed long-term decisions (warm tier) |
+| `decisions`           | committed long-term decisions (warm tier); `supersedes_id` → prior decision |
 | `snapshots`           | latest project structure (hot tier) |
 | `open_tasks`          | live work items (hot tier) |
+| `dead_ends`           | rejected approaches; `chosen_decision_id` → the decision that replaced it (Phase 3) |
 | `staging`             | writes the guard flagged for review |
 | `staging_history`     | reviewer outcomes — feeds the auto-tune learner |
 | `guard_policy`        | per-project per-category action (`stage`/`auto_reject`); PK `(project, category)` |
@@ -268,7 +287,9 @@ env `HIVE_DB_PATH` (default `hive.db`).
 | `BAAI/bge-small-en-v1.5` for embeddings | 384-dim, 33 MB, MIT, MTEB 62.2. ONNX via fastembed — no torch. (Supersedes the earlier `all-mpnet-base-v2` plan) |
 | RRF fusion of TF-IDF + dense | Combines keyword precision with semantic recall; constant 60 standard |
 | Pin TF-IDF #1 + top-K dense fusion | Full-corpus RRF diluted exact hits (R@1 100% → 70%). Pinning + head-only fusion makes hybrid beat TF-IDF on all metrics |
-| Removed the negation guard | Token-overlap demotion buried correct docs (−6 pts R@1). Revisit only with a precise single-doc version || Audit log append-only, INTEGER PK | Replayable, never mutated, survives migration |
+| Removed the negation guard | Token-overlap demotion buried correct docs (−6 pts R@1). Revisit only with a precise single-doc version |
+| Audit log append-only, INTEGER PK | Replayable, never mutated, survives migration |
+| Dead ends linked to the chosen decision (`ON DELETE SET NULL`) | A flat rejected-approaches table is a graveyard; the link makes it queryable provenance. SET NULL so the dead end outlives the decision |
 
 ---
 
@@ -290,7 +311,7 @@ env `HIVE_DB_PATH` (default `hive.db`).
 # Per-day end-to-end tests (run all before any commit)
 PYTHONIOENCODING=utf-8 python tests/test_day1.py
 # … through …
-PYTHONIOENCODING=utf-8 python tests/test_day7.py
+PYTHONIOENCODING=utf-8 python tests/test_day8.py   # Phase 3: dead ends + provenance
 
 # Retrieval benchmarks
 PYTHONIOENCODING=utf-8 python tests/bench_recall.py
@@ -341,6 +362,18 @@ from hive.core.writer import close_task
 close_task(task_id)
 ```
 
+When you rule an approach out (Phase 3) — record it linked to what you chose:
+```python
+from hive import write_memory, get_provenance
+write_memory("dead_end", "hive-api", {
+    "what_tried":         "what was attempted (≥ 5 words)",
+    "why_failed":         "why it didn't work",
+    "chosen_decision_id": decision_id,   # the decision that replaced it (optional)
+})
+# Later: "what did we consider before this decision?"
+prov = get_provenance(decision_id)   # {decision, dead_ends[], supersedes}
+```
+
 ---
 
 ## Roadmap
@@ -349,9 +382,13 @@ close_task(task_id)
 - **Phase 2** — Semantic embeddings (`bge-small-en-v1.5`), hybrid RRF retrieval.
   ✅ Shipped. Hybrid beats TF-IDF on every metric and holds across 54× corpus
   growth; cross-encoder evaluated and rejected. Log in `Phases/Phase_2.md`.
-- **Phase 3** ← next: Dead ends table, decision provenance, agent global config
+- **Phase 3** — Dead ends table, decision provenance, idempotent agent global
+  config. ✅ Implemented + tested on branch `phase-3-dead-ends` (test_day8 green;
+  retrieval benchmark unmoved). Design log in `Phases/Phase_3.md`.
 - **Phase 4**: Confidence decay, contradiction detection v2, cold archive
 - **Phase 5**: Agent handoff packets, expertise routing
 - **Phase 6**: Git hooks, file watcher, auto-learning, path selection
 
-*Last updated: Phase 2 SHIPPED — hybrid retrieval (76.0/90.6/0.834, beats TF-IDF on every metric, flat across 54× scale); cross-encoder rejected. Phase 3 next.*
+*Last updated: Phase 3 implemented on `phase-3-dead-ends` — dead ends + decision
+provenance + idempotent global config; test_day8 green, retrieval unchanged
+(79.2/91.7/0.856). Pending merge to main.*

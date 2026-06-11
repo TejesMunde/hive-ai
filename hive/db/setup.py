@@ -26,7 +26,10 @@ def init_db() -> None:
                 why         TEXT,
                 agent       TEXT,
                 created_at  TEXT NOT NULL,
-                confidence  REAL DEFAULT 1.0
+                confidence  REAL DEFAULT 1.0,
+                -- Phase 3: a decision may replace an earlier decision
+                -- (e.g. "switched from REST to gRPC"). Nullable self-reference.
+                supersedes_id TEXT REFERENCES decisions(id) ON DELETE SET NULL
             );
 
             CREATE TABLE IF NOT EXISTS snapshots (
@@ -108,6 +111,23 @@ def init_db() -> None:
                 FOREIGN KEY (decision_id) REFERENCES decisions(id) ON DELETE CASCADE
             );
 
+            -- Phase 3: dead ends — approaches that were tried and rejected,
+            -- linked to the decision that replaced each one. Nullable link so a
+            -- dead end can be recorded before its replacement exists. SET NULL
+            -- (not CASCADE) so deleting a decision never erases the record that
+            -- alternatives were explored — the dead end outlives the decision.
+            CREATE TABLE IF NOT EXISTS dead_ends (
+                id                  TEXT PRIMARY KEY,
+                project             TEXT NOT NULL,
+                what_tried          TEXT NOT NULL,
+                why_failed          TEXT NOT NULL,
+                chosen_decision_id  TEXT,
+                agent               TEXT,
+                created_at          TEXT NOT NULL,
+                confidence          REAL DEFAULT 1.0,
+                FOREIGN KEY (chosen_decision_id) REFERENCES decisions(id) ON DELETE SET NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_decisions_project   ON decisions(project);
             CREATE INDEX IF NOT EXISTS idx_snapshots_project   ON snapshots(project);
             CREATE INDEX IF NOT EXISTS idx_open_tasks_project  ON open_tasks(project);
@@ -116,8 +136,20 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_history_category    ON staging_history(category);
             CREATE INDEX IF NOT EXISTS idx_audit_project_kind  ON audit_log(project, kind);
             CREATE INDEX IF NOT EXISTS idx_audit_created       ON audit_log(created_at);
+            CREATE INDEX IF NOT EXISTS idx_dead_ends_project   ON dead_ends(project);
+            CREATE INDEX IF NOT EXISTS idx_dead_ends_chosen    ON dead_ends(chosen_decision_id);
             """
         )
+        _migrate(conn)
         conn.commit()
     finally:
         conn.close()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Idempotent column adds for DBs created before a schema bump."""
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(decisions)")}
+    if "supersedes_id" not in cols:
+        # SQLite cannot ALTER-ADD a column with an inline REFERENCES clause; the
+        # app-level FK usage + index is sufficient (FK enforced per insert).
+        conn.execute("ALTER TABLE decisions ADD COLUMN supersedes_id TEXT")
