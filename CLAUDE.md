@@ -34,6 +34,7 @@ H.I.V.E/
       embedder.py        ← fastembed wrapper (bge-small-en-v1.5, 384-dim)
       policy.py          ← per-project guard_policy + tune_policies() learner
       audit.py           ← append-only event log (read/aggregate helpers)
+      decay.py           ← Phase 4: confidence decay + archive constants (pure)
     cli/
       staging.py         ← staging review CLI: list/accept/reject/clear/stats/tune/review
       audit.py           ← audit log CLI: tail/counts/fails
@@ -89,6 +90,25 @@ build notes in `Phases/Phase_3.md`.
 - `python -m hive.cli.init` injects an idempotent, marker-wrapped Hive block into
   global agent rule files (`~/.claude/CLAUDE.md`, …) — re-running never duplicates.
 - `tests/test_day8.py` green; days 1–7 + `bench_recall` unchanged.
+
+**Phase 4 — IMPLEMENTED on branch `phase-4-decay-archive` (pending merge).** Design +
+build notes in `Phases/Phase_4.md`.
+- **Confidence decay** (`core/decay.py`): `eff_conf = stored × 0.5^(age_days/90)`,
+  computed at read time — stored `confidence` is NEVER mutated by reads. age 0 →
+  eff == stored, so the retrieval benchmark is unmoved. Reader's confidence nudge
+  now uses the decayed value; `read_memory` exposes `effective_confidence`.
+- **`reinforce_decision(id)`**: bumps stored confidence (+0.25, capped at 2.0),
+  resets `created_at` (the decay clock), and un-archives.
+- **Cold archive** (`decisions.archived_at`, idempotent migration): a decision
+  leaves the warm tier when superseded (auto), when `sweep_archive()` finds its
+  eff_conf below `ARCHIVE_FLOOR=0.25`, or via explicit `archive_decision(id)`.
+  `read_memory` excludes archived by default; `include_archived=True` surfaces
+  them; `get_provenance` always resolves them.
+- **Contradiction detection v2** (`guard._find_contradiction_dense`): adds a dense
+  path — high cosine (`CONTRA_SIM=0.80`) + shared subject + an opposition/
+  replacement cue → flag to staging. 0 false positives on the eval corpus;
+  degrades to the v1 swapped-noun heuristic when dense is off.
+- `tests/test_day9.py` green; days 1–8 + `bench_recall` unchanged (79.2/91.7/0.856).
 
 ---
 
@@ -261,7 +281,7 @@ One corrupt record poisons every future agent call that retrieves it.
 
 | Table | Role |
 |---|---|
-| `decisions`           | committed long-term decisions (warm tier); `supersedes_id` → prior decision |
+| `decisions`           | committed long-term decisions (warm tier); `supersedes_id` → prior decision; `archived_at` → cold-archive flag (Phase 4) |
 | `snapshots`           | latest project structure (hot tier) |
 | `open_tasks`          | live work items (hot tier) |
 | `dead_ends`           | rejected approaches; `chosen_decision_id` → the decision that replaced it (Phase 3) |
@@ -312,6 +332,7 @@ env `HIVE_DB_PATH` (default `hive.db`).
 PYTHONIOENCODING=utf-8 python tests/test_day1.py
 # … through …
 PYTHONIOENCODING=utf-8 python tests/test_day8.py   # Phase 3: dead ends + provenance
+PYTHONIOENCODING=utf-8 python tests/test_day9.py   # Phase 4: decay + archive + contradiction v2
 
 # Retrieval benchmarks
 PYTHONIOENCODING=utf-8 python tests/bench_recall.py
@@ -374,8 +395,16 @@ write_memory("dead_end", "hive-api", {
 prov = get_provenance(decision_id)   # {decision, dead_ends[], supersedes}
 ```
 
----
+Confidence ages out (Phase 4) — re-affirm a decision still in force, archive stale ones:
+```python
+from hive import reinforce_decision, archive_decision, sweep_archive
+reinforce_decision(decision_id)      # +confidence, resets decay clock, un-archives
+archive_decision(decision_id)        # explicit cold-archive (also auto on supersede)
+sweep_archive(project="hive-api")    # archive decisions whose decayed conf < 0.25
+# stale/superseded decisions drop out of read_memory unless include_archived=True
+```
 
+---
 ## Roadmap
 
 - **Phase 1** — Core memory, write guard, staging, audit, auto-tune. ✅ Shipped.
@@ -385,10 +414,12 @@ prov = get_provenance(decision_id)   # {decision, dead_ends[], supersedes}
 - **Phase 3** — Dead ends table, decision provenance, idempotent agent global
   config. ✅ Implemented + tested on branch `phase-3-dead-ends` (test_day8 green;
   retrieval benchmark unmoved). Design log in `Phases/Phase_3.md`.
-- **Phase 4**: Confidence decay, contradiction detection v2, cold archive
+- **Phase 4** — Confidence decay (lazy half-life), cold archive, contradiction
+  detection v2. ✅ Implemented + tested on branch `phase-4-decay-archive`
+  (test_day9 green; retrieval benchmark unmoved). Design log in `Phases/Phase_4.md`.
 - **Phase 5**: Agent handoff packets, expertise routing
 - **Phase 6**: Git hooks, file watcher, auto-learning, path selection
 
-*Last updated: Phase 3 implemented on `phase-3-dead-ends` — dead ends + decision
-provenance + idempotent global config; test_day8 green, retrieval unchanged
+*Last updated: Phase 4 implemented on `phase-4-decay-archive` — confidence decay +
+cold archive + contradiction v2; test_day9 green, days 1–8 + retrieval unchanged
 (79.2/91.7/0.856). Pending merge to main.*

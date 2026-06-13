@@ -106,9 +106,11 @@ def main():
     _passed("provenance of unknown decision -> None")
 
     print("\n--- Dead ends stay out of decision recall ---")
-    ctx = read_memory(project, query="primary store database choice")
+    # `did` was superseded above, so Phase 4 auto-archives it: retrievable only
+    # with include_archived=True, but never surfaced as a dead end.
+    ctx = read_memory(project, query="primary store database choice", include_archived=True)
     warm_ids = {d["id"] for d in ctx["warm"]["decisions"]}
-    assert did in warm_ids, "seed decision should be retrievable"
+    assert did in warm_ids, "seed decision should be retrievable (archived)"
     conn = get_connection()
     de_ids = {r["id"] for r in conn.execute("SELECT id FROM dead_ends")}
     conn.close()

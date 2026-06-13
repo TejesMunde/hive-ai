@@ -5,6 +5,9 @@ from hive.db.setup import get_connection
 from hive.core.guard import validate, send_to_staging
 from hive.core.policy import category_of, policy_action, record_outcome
 from hive.core.audit import log as audit_log
+from hive.core.decay import (
+    effective_confidence, REINFORCE_STEP, CONF_CAP, ARCHIVE_FLOOR,
+)
 
 
 def _decision_exists(conn, decision_id: str) -> bool:
@@ -80,6 +83,12 @@ def write_memory(record_type: str, project: str, data: dict) -> dict:
                     sup,
                 ),
             )
+            # Phase 4: a superseded decision has been replaced — cold-archive it.
+            if sup:
+                conn.execute(
+                    "UPDATE decisions SET archived_at=? WHERE id=? AND archived_at IS NULL",
+                    (now, sup),
+                )
 
         elif record_type == "snapshot":
             conn.execute(
@@ -257,6 +266,124 @@ def promote_from_staging(staging_id: str) -> dict:
         return {"status": "error", "reason": str(e)}
     finally:
         conn.close()
+
+
+def reinforce_decision(decision_id: str, by: float = REINFORCE_STEP) -> dict:
+    """
+    Phase 4: re-affirm a decision. Bumps stored confidence (capped at CONF_CAP)
+    and resets created_at to now, restarting the decay half-life clock. Also
+    un-archives the decision if it had fallen into the cold archive.
+    """
+    now  = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT project, confidence FROM decisions WHERE id=?", (decision_id,)
+        ).fetchone()
+        if row is None:
+            return {"status": "not_found"}
+        new_conf = min((row["confidence"] or 1.0) + by, CONF_CAP)
+        conn.execute(
+            "UPDATE decisions SET confidence=?, created_at=?, archived_at=NULL WHERE id=?",
+            (new_conf, now, decision_id),
+        )
+        conn.commit()
+        audit_log(row["project"], "decision_reinforce",
+                  {"id": decision_id, "confidence": new_conf})
+        print(f"[hive] Reinforced {decision_id[:8]}… → confidence {new_conf:.2f}")
+        return {"status": "reinforced", "confidence": new_conf}
+    except Exception as e:
+        conn.rollback()
+        return {"status": "error", "reason": str(e)}
+    finally:
+        conn.close()
+
+
+def archive_decision(decision_id: str) -> dict:
+    """Phase 4: explicitly move a decision to the cold archive."""
+    now  = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT project FROM decisions WHERE id=?", (decision_id,)
+        ).fetchone()
+        cur = conn.execute(
+            "UPDATE decisions SET archived_at=? WHERE id=? AND archived_at IS NULL",
+            (now, decision_id),
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            return {"status": "not_found_or_already_archived"}
+        if row:
+            audit_log(row["project"], "decision_archive", {"id": decision_id})
+        print(f"[hive] Archived {decision_id[:8]}…")
+        return {"status": "archived"}
+    except Exception as e:
+        conn.rollback()
+        return {"status": "error", "reason": str(e)}
+    finally:
+        conn.close()
+
+
+def unarchive_decision(decision_id: str) -> dict:
+    """Phase 4: bring a decision back from the cold archive into the warm tier."""
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "UPDATE decisions SET archived_at=NULL WHERE id=? AND archived_at IS NOT NULL",
+            (decision_id,),
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            return {"status": "not_found_or_already_live"}
+        print(f"[hive] Unarchived {decision_id[:8]}…")
+        return {"status": "unarchived"}
+    except Exception as e:
+        conn.rollback()
+        return {"status": "error", "reason": str(e)}
+    finally:
+        conn.close()
+
+
+def sweep_archive(project: str | None = None, floor: float = ARCHIVE_FLOOR) -> list[str]:
+    """
+    Phase 4: archive live decisions whose *effective* (decayed) confidence has
+    fallen below `floor`. Explicit/cron-able — NOT run inside read_memory, so
+    reads stay side-effect free and the benchmark stays honest. Returns the list
+    of archived decision ids.
+    """
+    now  = datetime.now(timezone.utc).isoformat()
+    conn = get_connection()
+    archived: list[str] = []
+    try:
+        sql = ("SELECT id, project, confidence, created_at FROM decisions "
+               "WHERE archived_at IS NULL")
+        params: tuple = ()
+        if project is not None:
+            sql += " AND project=?"
+            params = (project,)
+        rows = conn.execute(sql, params).fetchall()
+        # Collect + update under one transaction; audit AFTER commit so the
+        # append-only log's separate connection never deadlocks on the write lock.
+        to_audit: list[tuple[str, str]] = []
+        for r in rows:
+            if effective_confidence(r["confidence"], r["created_at"]) < floor:
+                conn.execute("UPDATE decisions SET archived_at=? WHERE id=?", (now, r["id"]))
+                archived.append(r["id"])
+                to_audit.append((r["project"], r["id"]))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        archived = []
+        to_audit = []
+    finally:
+        conn.close()
+
+    for proj, did in to_audit:
+        audit_log(proj, "decision_archive", {"id": did, "reason": "below_confidence_floor"})
+    if archived:
+        print(f"[hive] sweep_archive: archived {len(archived)} stale decision(s)")
+    return archived
 
 
 def reject_from_staging(staging_id: str) -> dict:

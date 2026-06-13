@@ -29,9 +29,11 @@ def init_db() -> None:
                 confidence  REAL DEFAULT 1.0,
                 -- Phase 3: a decision may replace an earlier decision
                 -- (e.g. "switched from REST to gRPC"). Nullable self-reference.
-                supersedes_id TEXT REFERENCES decisions(id) ON DELETE SET NULL
+                supersedes_id TEXT REFERENCES decisions(id) ON DELETE SET NULL,
+                -- Phase 4: cold archive. NULL = live (warm tier); a timestamp
+                -- means archived (superseded / below confidence floor / explicit).
+                archived_at TEXT
             );
-
             CREATE TABLE IF NOT EXISTS snapshots (
                 id              TEXT PRIMARY KEY,
                 project         TEXT NOT NULL,
@@ -147,9 +149,19 @@ def init_db() -> None:
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
-    """Idempotent column adds for DBs created before a schema bump."""
+    """
+    Idempotent column adds for DBs created before a schema bump. Indexes on
+    migrated columns are created HERE (after the ALTER), not in the main
+    executescript — on a pre-existing table the `CREATE TABLE IF NOT EXISTS` is a
+    no-op, so an index referencing a not-yet-added column would fail first.
+    """
     cols = {row["name"] for row in conn.execute("PRAGMA table_info(decisions)")}
     if "supersedes_id" not in cols:
         # SQLite cannot ALTER-ADD a column with an inline REFERENCES clause; the
         # app-level FK usage + index is sufficient (FK enforced per insert).
         conn.execute("ALTER TABLE decisions ADD COLUMN supersedes_id TEXT")
+    if "archived_at" not in cols:
+        # Phase 4: cold archive flag for pre-existing decisions tables.
+        conn.execute("ALTER TABLE decisions ADD COLUMN archived_at TEXT")
+    # Phase 4: index the archive flag (column now guaranteed to exist).
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_decisions_archived ON decisions(archived_at)")
