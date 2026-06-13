@@ -221,9 +221,11 @@ def _find_contradiction(project: str, new_what: str) -> str | None:
         "SELECT what FROM decisions WHERE project=?", (project,)
     ).fetchall()
     conn.close()
+    existing_whats = [r["what"] for r in rows]
 
-    for row in rows:
-        existing = row["what"].lower()
+    # v1: precise swapped-noun-around-marker heuristic.
+    for existing_what in existing_whats:
+        existing = existing_what.lower()
         for marker in markers:
             if marker not in new_lower or marker not in existing:
                 continue
@@ -236,5 +238,58 @@ def _find_contradiction(project: str, new_what: str) -> str | None:
             swapped   = bool(nL & eR) and bool(nR & eL)
             same_side = bool(nL & eL) and bool(nR & eR)
             if swapped and not same_side:
-                return row["what"]
+                return existing_what
+
+    # v2: dense-similarity path. Catches semantically-opposed rewordings v1 misses
+    # ("Adopted REST for the public API" vs "Moved the public API to gRPC"). Fires
+    # only on HIGH similarity AND a replacement/opposition cue — pure topical
+    # similarity is NOT a contradiction. Optional: silently skipped if dense off.
+    hit = _find_contradiction_dense(new_what, existing_whats)
+    if hit:
+        return hit
     return None
+
+
+# Replacement / opposition cues that, combined with high semantic similarity to
+# an existing decision about the same subject, signal a contradiction (v2).
+_REPLACE_CUES = (
+    "instead of", "rather than", " over ", " not ", " vs ", "replace", "replaced",
+    "migrate", "migrated", "moved to", "switch", "switched", "drop", "dropped",
+    "deprecate", "deprecated", "abandon", "abandoned", "no longer",
+)
+
+
+def _find_contradiction_dense(new_what: str, existing_whats: list[str]) -> str | None:
+    """
+    Embedding path for contradiction v2. Returns the conflicting decision text or
+    None. Degrades silently to None when the dense stack is unavailable.
+    """
+    if not existing_whats:
+        return None
+    try:
+        from hive.core.dense import _dense_enabled
+        if not _dense_enabled():
+            return None
+        from hive.core.embedder import embed_batch
+        from hive.core.decay import CONTRA_SIM
+        from hive.core.normalize import normalize_tokens
+
+        new_lower = new_what.lower()
+        new_has_cue = any(c in new_lower for c in _REPLACE_CUES)
+
+        vecs = embed_batch([new_what] + existing_whats)
+        qv = vecs[0]
+        new_toks = {t for t in normalize_tokens(new_what)}
+        for i, existing_what in enumerate(existing_whats):
+            sim = float(vecs[i + 1] @ qv)   # vectors are L2-normalized
+            if sim < CONTRA_SIM:
+                continue
+            # Require a shared decision subject (>=1 significant token overlap)
+            # and a replacement/opposition cue in either decision.
+            shared_subject = bool(new_toks & normalize_tokens(existing_what))
+            cue = new_has_cue or any(c in existing_what.lower() for c in _REPLACE_CUES)
+            if shared_subject and cue:
+                return existing_what
+        return None
+    except Exception:
+        return None

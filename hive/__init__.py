@@ -1,7 +1,10 @@
 """Hive Mind public API."""
 
 from hive.db.setup import init_db, get_connection
-from hive.core.writer import write_memory, close_task, promote_from_staging, reject_from_staging
+from hive.core.writer import (
+    write_memory, close_task, promote_from_staging, reject_from_staging,
+    reinforce_decision, archive_decision, unarchive_decision, sweep_archive,
+)
 from hive.core.reader import read_memory, get_provenance
 
 __all__ = [
@@ -13,4 +16,8 @@ __all__ = [
     "close_task",
     "promote_from_staging",
     "reject_from_staging",
+    "reinforce_decision",
+    "archive_decision",
+    "unarchive_decision",
+    "sweep_archive",
 ]

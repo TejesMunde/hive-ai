@@ -24,6 +24,7 @@ from hive.db.setup import get_connection
 from hive.core.normalize import normalize_tokens
 from hive.core.audit import log as audit_log
 from hive.core.dense import hybrid_rerank
+from hive.core.decay import effective_confidence
 
 HOT_TOKEN_BUDGET  = 500
 WARM_TOKEN_BUDGET = 2500
@@ -64,12 +65,14 @@ def _idf_score(q_tokens: set[str], doc_tokens: set[str], idf: dict[str, float]) 
     return sum(idf.get(t, 1.0) for t in hit) / q_weight
 
 
-def read_memory(project: str, query: str = "") -> dict:
+def read_memory(project: str, query: str = "", include_archived: bool = False) -> dict:
     """
     Return a token-budgeted context slice for `project`, ranked against `query`.
 
-    Shape:
-      {
+    Phase 4: cold-archived decisions (`archived_at IS NOT NULL`) are excluded from
+    the warm tier by default. Pass `include_archived=True` to surface them.
+
+    Shape:      {
         "hot":  {"open_tasks": [...], "latest_snapshot": {...} | None},
         "warm": {"decisions": [...]},
         "token_estimate": int
@@ -121,9 +124,10 @@ def read_memory(project: str, query: str = "") -> dict:
             hot_tokens += _estimate_tokens(snap_row["file_structure"] or "")
 
         # ── Warm: decisions ranked by TF-IDF + recency + confidence ────────
+        archived_clause = "" if include_archived else "AND archived_at IS NULL "
         dec_rows = conn.execute(
             "SELECT id, what, why, agent, created_at, confidence "
-            "FROM decisions WHERE project=? "
+            "FROM decisions WHERE project=? " + archived_clause +
             "ORDER BY created_at ASC",
             (project,),
         ).fetchall()
@@ -157,8 +161,11 @@ def read_memory(project: str, query: str = "") -> dict:
             else:
                 recency = (idx / max(n_docs - 1, 1)) * RECENCY_WEIGHT if n_docs > 1 else 0.0
 
-            conf = row["confidence"] if row["confidence"] is not None else 1.0
-            conf_adj = (conf - 1.0) * CONFIDENCE_WEIGHT
+            # Phase 4: confidence decays exponentially with age (pure read-time;
+            # stored value untouched). age 0 → eff == stored, so day-0 ranking is
+            # unchanged and the benchmark does not move.
+            eff_conf = effective_confidence(row["confidence"], row["created_at"])
+            conf_adj = (eff_conf - 1.0) * CONFIDENCE_WEIGHT
 
             score = boost + recency + conf_adj
             scored.append((score, row["created_at"], row, what_toks, combined_toks))
@@ -194,6 +201,8 @@ def read_memory(project: str, query: str = "") -> dict:
                 "agent":      row["agent"],
                 "created_at": row["created_at"],
                 "confidence": row["confidence"] if row["confidence"] is not None else 1.0,
+                "effective_confidence": round(
+                    effective_confidence(row["confidence"], row["created_at"]), 3),
                 "score":      round(score, 3),
             }
             cost = _estimate_tokens(entry["what"] + " " + (entry["why"] or ""))
