@@ -6,7 +6,7 @@ from hive.core.guard import validate, send_to_staging
 from hive.core.policy import category_of, policy_action, record_outcome
 from hive.core.audit import log as audit_log
 from hive.core.decay import (
-    effective_confidence, REINFORCE_STEP, CONF_CAP, ARCHIVE_FLOOR,
+    effective_confidence, clamp_confidence, REINFORCE_STEP, ARCHIVE_FLOOR,
 )
 
 
@@ -79,7 +79,7 @@ def write_memory(record_type: str, project: str, data: dict) -> dict:
                     data.get("why",  "").strip(),
                     data.get("agent", "unknown"),
                     now,
-                    data.get("confidence", 1.0),
+                    clamp_confidence(data.get("confidence", 1.0)),
                     sup,
                 ),
             )
@@ -131,10 +131,9 @@ def write_memory(record_type: str, project: str, data: dict) -> dict:
                     chosen,
                     data.get("agent", "unknown"),
                     now,
-                    data.get("confidence", 1.0),
+                    clamp_confidence(data.get("confidence", 1.0)),
                 ),
             )
-
         conn.commit()
         print(f"[hive] Committed {record_type} → {record_id[:8]}…")
         audit_log(project, "write_commit",
@@ -270,7 +269,7 @@ def promote_from_staging(staging_id: str) -> dict:
 
 def reinforce_decision(decision_id: str, by: float = REINFORCE_STEP) -> dict:
     """
-    Phase 4: re-affirm a decision. Bumps stored confidence (capped at CONF_CAP)
+    Phase 4: re-affirm a decision. Bumps stored confidence (capped at 1.0)
     and resets created_at to now, restarting the decay half-life clock. Also
     un-archives the decision if it had fallen into the cold archive.
     """
@@ -282,7 +281,7 @@ def reinforce_decision(decision_id: str, by: float = REINFORCE_STEP) -> dict:
         ).fetchone()
         if row is None:
             return {"status": "not_found"}
-        new_conf = min((row["confidence"] or 1.0) + by, CONF_CAP)
+        new_conf = clamp_confidence((row["confidence"] or 1.0) + by)
         conn.execute(
             "UPDATE decisions SET confidence=?, created_at=?, archived_at=NULL WHERE id=?",
             (new_conf, now, decision_id),

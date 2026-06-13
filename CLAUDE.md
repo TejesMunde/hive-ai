@@ -97,7 +97,7 @@ build notes in `Phases/Phase_4.md`.
   computed at read time — stored `confidence` is NEVER mutated by reads. age 0 →
   eff == stored, so the retrieval benchmark is unmoved. Reader's confidence nudge
   now uses the decayed value; `read_memory` exposes `effective_confidence`.
-- **`reinforce_decision(id)`**: bumps stored confidence (+0.25, capped at 2.0),
+- **`reinforce_decision(id)`**: bumps stored confidence (+0.25, capped at 1.0),
   resets `created_at` (the decay clock), and un-archives.
 - **Cold archive** (`decisions.archived_at`, idempotent migration): a decision
   leaves the warm tier when superseded (auto), when `sweep_archive()` finds its

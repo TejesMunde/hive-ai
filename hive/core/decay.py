@@ -17,10 +17,22 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 HALF_LIFE_DAYS = 90.0   # confidence halves every 90 unreinforced days
-CONF_CAP       = 2.0    # reinforcement ceiling
-ARCHIVE_FLOOR  = 0.25   # eff_conf below this → eligible for cold archive
-REINFORCE_STEP = 0.25   # default reinforcement bump
+CONF_CAP       = 1.0    # confidence ceiling. Capped at 1.0 (not 2.0) so a heavily
+                        # reinforced decision can't buy immunity from decay: post-
+                        # abandonment warmth is always bounded to the base 180-day
+                        # schedule no matter how many times it was touched. Confidence
+                        # is a freshness/trust signal in [0,1], never a reserve.
+ARCHIVE_FLOOR  = 0.25   # eff_conf below this → eligible for cold archive (≈180 days
+                        # after the last write/reinforce at full confidence)
+REINFORCE_STEP = 0.25   # default reinforcement bump (toward the 1.0 ceiling)
 CONTRA_SIM     = 0.80   # dense cosine threshold for contradiction v2
+
+
+def clamp_confidence(x: float | None) -> float:
+    """Confidence lives in [0, 1]. Used on every write + reinforcement."""
+    if x is None:
+        return 1.0
+    return max(0.0, min(1.0, float(x)))
 
 
 def _parse_iso(ts: str) -> datetime | None:

@@ -34,9 +34,23 @@ and reset the clock so decay restarts from now:
 
 ```python
 reinforce_decision(decision_id, by=0.25)
-#   confidence = min(confidence + by, CONF_CAP)   # CONF_CAP = 2.0
-#   created_at = now                              # resets the half-life clock
+#   confidence = clamp(confidence + by, 0.0, 1.0)   # ceiling is 1.0, not 2.0
+#   created_at = now                                # resets the half-life clock
 ```
+
+**Why the ceiling is 1.0, not 2.0 (design review fix).** An early cut capped
+reinforcement at 2.0. But with a fixed `ARCHIVE_FLOOR = 0.25`, a stored value of
+2.0 only crosses the floor at ~270 days vs ~180 for 1.0 — i.e. heavy
+reinforcement *buys immunity from decay*. That is exactly backwards once Phase 6
+auto-reinforces on related commits: the most-touched decisions (often the ones in
+flux, about to change) would pin at 2.0 and stop decaying for the better part of a
+year even after the project moved on. Capping at 1.0 makes confidence a pure
+freshness/trust signal in `[0,1]`: reinforcement resets the *clock* (so an active
+decision stays warm while touched) but never accumulates a reserve, so
+post-abandonment warmth is always bounded to the base 180-day schedule. The
+"reinforced ranks higher" effect is preserved through the recency boost (reset
+`created_at`), not through an above-baseline confidence. Confidence is also
+clamped to `[0,1]` on every **write**, so the invariant holds end-to-end.
 
 **Reader integration** — replace the static `conf_adj = (conf-1.0)*0.05` with the
 decayed value:
@@ -133,7 +147,8 @@ contradiction precision check to the Phase 4 test before merging.
 
 ```python
 HALF_LIFE_DAYS    = 90      # confidence halves every 90 unreinforced days
-CONF_CAP          = 2.0     # reinforcement ceiling
+CONF_CAP          = 1.0     # confidence ceiling — capped at 1.0 (see §1 note), so
+                            # reinforcement resets the clock but buys no decay immunity
 ARCHIVE_FLOOR     = 0.25    # eff_conf below this → eligible for cold archive
 CONTRA_SIM        = 0.80    # dense cosine threshold for contradiction v2
 REINFORCE_STEP    = 0.25    # default reinforcement bump
@@ -145,7 +160,7 @@ REINFORCE_STEP    = 0.25    # default reinforcement bump
 
 - [x] `decisions.archived_at` added idempotently (index built in `_migrate` AFTER the ALTER)
 - [x] Decay is a pure read-time function; stored confidence unchanged by reads
-- [x] `reinforce_decision()` bumps confidence (capped at 2.0) and resets the clock
+- [x] `reinforce_decision()` bumps confidence (capped at 1.0) and resets the clock
 - [x] Day-0 behaviour unchanged (eff_conf == stored at age 0) → benchmark unmoved
 - [x] Superseding a decision auto-archives the superseded row
 - [x] `sweep_archive()` archives decisions under the confidence floor; reads do not
