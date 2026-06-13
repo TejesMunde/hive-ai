@@ -22,7 +22,7 @@ from hive import (
     reinforce_decision, archive_decision, unarchive_decision, sweep_archive,
     get_connection,
 )
-from hive.core.decay import effective_confidence, HALF_LIFE_DAYS, ARCHIVE_FLOOR, CONF_CAP
+from hive.core.decay import effective_confidence, HALF_LIFE_DAYS, ARCHIVE_FLOOR
 
 
 def _passed(label):
@@ -46,7 +46,7 @@ def main():
     assert effective_confidence(1.0, now.isoformat()) == 1.0
     half = (now - timedelta(days=HALF_LIFE_DAYS)).isoformat()
     assert abs(effective_confidence(1.0, half) - 0.5) < 1e-6, "half-life math wrong"
-    assert effective_confidence(2.0, half) == 1.0  # cap-confidence decays too
+    assert abs(effective_confidence(0.8, half) - 0.4) < 1e-6  # decay is linear in stored
     _passed("eff_conf: age0 -> stored, half-life -> half")
 
     dec = write_memory("decision", project, {
@@ -66,24 +66,40 @@ def main():
     assert stored2 == 1.0, "read_memory mutated stored confidence"
     _passed("read_memory does not mutate stored confidence")
 
-    print("\n--- Reinforcement bumps + resets the clock + un-archives ---")
+    print("\n--- Reinforcement caps at 1.0, resets the clock, un-archives ---")
     _age_decision(did, 400)  # far past the floor
     assert sweep_archive(project) == [did], "stale decision not swept"
     assert len(read_memory(project, query="primary store")["warm"]["decisions"]) == 0
     rr = reinforce_decision(did)
-    assert rr["status"] == "reinforced" and abs(rr["confidence"] - 1.25) < 1e-9, rr
+    # confidence is a freshness/trust signal in [0,1]; a full decision stays 1.0
+    # (no immunity reserve), but its decay clock is reset so it revives.
+    assert rr["status"] == "reinforced" and rr["confidence"] == 1.0, rr
     live = read_memory(project, query="primary store")["warm"]["decisions"]
     assert len(live) == 1 and live[0]["id"] == did, "reinforce did not revive decision"
-    assert live[0]["effective_confidence"] >= 1.0, "clock not reset on reinforce"
-    _passed("reinforce: +0.25, clock reset, un-archived")
+    assert live[0]["effective_confidence"] == 1.0, "clock not reset on reinforce"
+    _passed("reinforce a full decision: stays 1.0, clock reset, un-archived")
 
-    for _ in range(10):
-        reinforce_decision(did)
+    # A tentative (sub-1.0) decision: reinforcement bumps it toward the ceiling.
+    tent = write_memory("decision", project, {
+        "what": "Tentatively use gRPC for the internal RPC layer",
+        "why": "needs a load test before we fully commit", "confidence": 0.5})
+    tid = tent["id"]
+    assert reinforce_decision(tid)["confidence"] == 0.75, "0.5 + 0.25 should be 0.75"
+    assert reinforce_decision(tid)["confidence"] == 1.0, "0.75 + 0.25 should clamp to 1.0"
+    _passed("reinforce a tentative decision: 0.5 -> 0.75 -> capped 1.0")
+
+    # The [0,1] invariant: out-of-range writes are clamped, never stored as-is.
+    write_memory("decision", project, {
+        "what": "Decision written with an out-of-range high confidence",
+        "why": "guard against bad caller input", "confidence": 5.0})
+    write_memory("decision", project, {
+        "what": "Decision written with a negative confidence value here",
+        "why": "guard against bad caller input", "confidence": -3.0})
     conn = get_connection()
-    capped = conn.execute("SELECT confidence FROM decisions WHERE id=?", (did,)).fetchone()["confidence"]
+    confs = [r["confidence"] for r in conn.execute("SELECT confidence FROM decisions")]
     conn.close()
-    assert capped <= CONF_CAP, f"confidence exceeded cap: {capped}"
-    _passed(f"confidence capped at {CONF_CAP}")
+    assert all(0.0 <= c <= 1.0 for c in confs), f"confidence escaped [0,1]: {confs}"
+    _passed("confidence invariant: writes clamped + reinforcement capped to [0,1]")
 
     print("\n--- Cold archive triggers ---")
     # explicit. (read_memory returns all live decisions, budget-limited — assert
