@@ -24,7 +24,7 @@ H.I.V.E/
     __init__.py          ← public API: init_db, get_connection, write_memory,
                             read_memory, get_provenance, close_task,
                             promote/reject_from_staging
-    db/setup.py          ← SQLite init, 9 tables (+ dead_ends), migrations, get_connection()
+    db/setup.py          ← SQLite init, 10 tables, migrations, get_connection()
     core/
       guard.py           ← 6 write-guard rules, validates every record pre-commit
       writer.py          ← write_memory, close_task, promote/reject staging
@@ -37,10 +37,13 @@ H.I.V.E/
       decay.py           ← Phase 4: confidence decay + archive constants (pure)
       handoff.py         ← Phase 5: handoff packets (state + delta-since-last)
       routing.py         ← Phase 5: expertise routing (decay-aware relevance)
+      extract.py         ← Phase 6: PURE commit→decision extractor (quality floor)
     cli/
       staging.py         ← staging review CLI: list/accept/reject/clear/stats/tune/review
       audit.py           ← audit log CLI: tail/counts/fails
       init.py            ← `hive init`: idempotent global-config injection (Phase 3)
+      capture.py         ← Phase 6: `hive capture <sha>` git-hook edge + `stats`
+      hook.py            ← Phase 6: idempotent post-commit hook install/uninstall
   tests/
     test_day1.py … test_day8.py   ← per-day end-to-end tests
     bench_recall.py      ← tfidf vs dense vs hybrid: Recall@1/@3, MRR, latency
@@ -128,10 +131,36 @@ build notes in `Phases/Phase_5.md`.
 - `tests/test_day10.py` green; days 1–9 + `bench_recall` unchanged (Phase 5 adds no
   retrieval-path change).
 
+**Phase 6 — IMPLEMENTED on branch `phase-6-git-capture` (pending merge).** Design +
+build notes in `Phases/Phase_6.md`. First **machine write path** — quality floor first.
+- **Pure extractor** (`core/extract.py`): `parse_commit(raw)` → `CommitInfo`;
+  `extract_decision(info)` → `Candidate | Skip`. No git, no DB — the hardest piece is
+  the most testable. Three gates: (1) type — conventional `{feat,fix,refactor,perf}`
+  or a ≥5-word prefix-less subject; merges / `chore|docs|style|test|build|ci` / version
+  bumps skipped; (2) decision-cue — message must carry decision language (`chose`,
+  ` over `, `switched to`, `because`, `instead of`, …), aligned with the guard's
+  `_REPLACE_CUES`; (3) substance — `what` ≥ 5 words AND a real `why` exists, so a
+  survivor also clears the guard on its own merits. Tuned for PRECISION over recall.
+- **Capture edge** (`cli/capture.py`): `hive capture <sha>` shells `git show -s` for the
+  message only, runs the extractor. A `Skip` → audit `extract_skipped` + exit (the floor;
+  **nothing reaches staging**). A `Candidate` → the NORMAL `write_memory(..., source=
+  'git-hook', confidence=0.6)` — **guard never bypassed** — then a snapshot refresh.
+  **No handoff write** (delta-explosion guard). `MACHINE_CONFIDENCE=0.6` so machine
+  decisions rank below confirmed human ones until reinforced (no auto-reinforce).
+- **Hook installer** (`cli/hook.py`): `install`/`uninstall`/`status` write a marker-
+  wrapped `.git/hooks/post-commit` — idempotent, append-safe over an existing hook,
+  uninstall removes only Hive's block. Best-effort: a capture failure never blocks a commit.
+- **Provenance** (`decisions.source`, `staging.source`; idempotent migration): tags writes
+  `git-hook` / `human-reviewed` / NULL(agent). Observability only — does NOT change
+  ranking. `hive capture stats` reports cap-saturation (decisions at exactly 1.0), counts
+  by source, and `extract_skipped` reasons.
+- `tests/test_day11.py` green (pure-gate unit tests + end-to-end through the real guard);
+  days 1–10 + `bench_recall` unchanged (79.2/91.7/0.856 — machine writes are age-0 at
+  conf 0.6; eval corpus is all conf-1.0, so the benchmark is unmoved).
+
 ---
 
-## Dependencies
-Phase 1 was pure stdlib. **Phase 2 adds `numpy` and `fastembed`** (ONNX runtime).
+## DependenciesPhase 1 was pure stdlib. **Phase 2 adds `numpy` and `fastembed`** (ONNX runtime).
 These are required for the dense/hybrid retrieval path. Pure-stdlib code paths
 must still work when `fastembed` is absent (reader degrades to TF-IDF).
 
@@ -298,11 +327,11 @@ One corrupt record poisons every future agent call that retrieves it.
 
 | Table | Role |
 |---|---|
-| `decisions`           | committed long-term decisions (warm tier); `supersedes_id` → prior decision; `archived_at` → cold-archive flag (Phase 4) |
+| `decisions`           | committed long-term decisions (warm tier); `supersedes_id` → prior decision; `archived_at` → cold-archive flag (Phase 4); `source` → write provenance (Phase 6) |
 | `snapshots`           | latest project structure (hot tier) |
 | `open_tasks`          | live work items (hot tier) |
 | `dead_ends`           | rejected approaches; `chosen_decision_id` → the decision that replaced it (Phase 3) |
-| `staging`             | writes the guard flagged for review |
+| `staging`             | writes the guard flagged for review; `source` → provenance tag (Phase 6) |
 | `staging_history`     | reviewer outcomes — feeds the auto-tune learner |
 | `guard_policy`        | per-project per-category action (`stage`/`auto_reject`); PK `(project, category)` |
 | `audit_log`           | append-only event stream — every write + every query |
@@ -352,6 +381,7 @@ PYTHONIOENCODING=utf-8 python tests/test_day1.py
 PYTHONIOENCODING=utf-8 python tests/test_day8.py   # Phase 3: dead ends + provenance
 PYTHONIOENCODING=utf-8 python tests/test_day9.py   # Phase 4: decay + archive + contradiction v2
 PYTHONIOENCODING=utf-8 python tests/test_day10.py  # Phase 5: handoff packets + expertise routing
+PYTHONIOENCODING=utf-8 python tests/test_day11.py  # Phase 6: git-commit decision extraction
 
 # Retrieval benchmarks
 PYTHONIOENCODING=utf-8 python tests/bench_recall.py
@@ -435,6 +465,17 @@ ranked = route_task("hive-api", "add rate limiting to the public API")
 # -> [{agent, score, evidence:[{decision_id, what, relevance}]}] ; advisory only
 ```
 
+Auto-capturing decisions from git commits (Phase 6) — quality floor, not a bypass:
+```bash
+python -m hive.cli.hook install            # idempotent post-commit hook (per repo)
+python -m hive.cli.capture <sha>           # what the hook runs; extract → guard → write
+python -m hive.cli.capture stats           # decisions at conf 1.0, by source, skip reasons
+python -m hive.cli.hook uninstall          # removes only Hive's hook block
+```
+Only commits carrying decision language (`chose … over`, `switched to`, `because`, …)
+clear the floor; survivors go through the FULL guard at confidence 0.6, tagged
+`source='git-hook'`. Sub-threshold commits are dropped + audited, never staged. The
+hook writes decisions + a snapshot only — never a handoff.
 ---## Roadmap
 
 - **Phase 1** — Core memory, write guard, staging, audit, auto-tune. ✅ Shipped.
@@ -450,8 +491,12 @@ ranked = route_task("hive-api", "add rate limiting to the public API")
 - **Phase 5** — Agent handoff packets (persisted state + delta), expertise routing
   (decay-aware, advisory). ✅ Implemented + tested on branch `phase-5-handoff-routing`
   (test_day10 green; retrieval benchmark unmoved). Design log in `Phases/Phase_5.md`.
-- **Phase 6**: Git hooks, file watcher, auto-learning, path selection
+- **Phase 6** — Git-commit decision extraction: pure keyword-cue extractor (quality
+  floor BEFORE the guard), idempotent post-commit hook, `source` provenance, reduced
+  machine confidence (0.6), cap-saturation observability. ✅ Implemented + tested on
+  branch `phase-6-git-capture` (test_day11 green; days 1–10 + retrieval unmoved).
+  Design log in `Phases/Phase_6.md`. Deferred to a later phase: file watcher / daemon.
 
-*Last updated: Phase 5 implemented on `phase-5-handoff-routing` — handoff packets +
-expertise routing; test_day10 green, days 1–9 + retrieval unchanged
+*Last updated: Phase 6 implemented on `phase-6-git-capture` — git-commit decision
+extraction (quality floor first); test_day11 green, days 1–10 + retrieval unchanged
 (79.2/91.7/0.856). Pending merge to main.*

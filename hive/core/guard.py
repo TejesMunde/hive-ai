@@ -99,13 +99,13 @@ def validate(record_type: str, project: str, data: dict) -> tuple[bool, str]:
     return True, "ok"
 
 
-def send_to_staging(record_type: str, project: str, data: dict, reason: str):
+def send_to_staging(record_type: str, project: str, data: dict, reason: str, source: str | None = None):
     import uuid
     from datetime import datetime, timezone
 
     conn = get_connection()
     conn.execute(
-        "INSERT INTO staging (id, type, project, data, reason, created_at) VALUES (?,?,?,?,?,?)",
+        "INSERT INTO staging (id, type, project, data, reason, created_at, source) VALUES (?,?,?,?,?,?,?)",
         (
             str(uuid.uuid4()),
             record_type,
@@ -113,6 +113,7 @@ def send_to_staging(record_type: str, project: str, data: dict, reason: str):
             json.dumps(data),
             reason,
             datetime.now(timezone.utc).isoformat(),
+            source,
         ),
     )
     conn.commit()
