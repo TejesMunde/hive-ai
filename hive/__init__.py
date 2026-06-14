@@ -26,4 +26,15 @@ __all__ = [
     "get_handoff",
     "latest_handoff",
     "route_task",
+    "capture_commit",
 ]
+
+
+def __getattr__(name):
+    # Lazy export (PEP 562): hive.cli.capture is runnable via `python -m`, so
+    # importing it eagerly here would double-load it and emit a RuntimeWarning on
+    # every `-m hive.cli.capture` invocation (the hook runs that on every commit).
+    if name == "capture_commit":
+        from hive.cli.capture import capture_commit
+        return capture_commit
+    raise AttributeError(f"module 'hive' has no attribute '{name}'")

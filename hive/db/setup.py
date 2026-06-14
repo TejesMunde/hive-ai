@@ -32,7 +32,10 @@ def init_db() -> None:
                 supersedes_id TEXT REFERENCES decisions(id) ON DELETE SET NULL,
                 -- Phase 4: cold archive. NULL = live (warm tier); a timestamp
                 -- means archived (superseded / below confidence floor / explicit).
-                archived_at TEXT
+                archived_at TEXT,
+                -- Phase 6: write provenance. NULL/'agent' = via API,
+                -- 'git-hook' = machine-extracted, 'human-reviewed' = promoted.
+                source TEXT
             );
             CREATE TABLE IF NOT EXISTS snapshots (
                 id              TEXT PRIMARY KEY,
@@ -58,7 +61,9 @@ def init_db() -> None:
                 project     TEXT NOT NULL,
                 data        TEXT NOT NULL,
                 reason      TEXT NOT NULL,
-                created_at  TEXT NOT NULL
+                created_at  TEXT NOT NULL,
+                -- Phase 6: provenance tag carried from the write path.
+                source      TEXT
             );
 
             -- Day 5: outcomes of past staging reviews. Used by `staging tune`
@@ -180,5 +185,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "archived_at" not in cols:
         # Phase 4: cold archive flag for pre-existing decisions tables.
         conn.execute("ALTER TABLE decisions ADD COLUMN archived_at TEXT")
-    # Phase 4: index the archive flag (column now guaranteed to exist).
+    if "source" not in cols:
+        # Phase 6: write provenance. NULL/'agent' = via API, 'git-hook' =
+        # machine-extracted from a commit, 'human-reviewed' = promoted staging.
+        conn.execute("ALTER TABLE decisions ADD COLUMN source TEXT")
+    staging_cols = {row["name"] for row in conn.execute("PRAGMA table_info(staging)")}
+    if "source" not in staging_cols:
+        # Phase 6: carry the provenance tag onto staged rows so the reviewer CLI
+        # can show [git-hook] and the learner can split accept-rates by source.
+        conn.execute("ALTER TABLE staging ADD COLUMN source TEXT")
+    # Phase 4 + 6: index migrated columns (now guaranteed to exist).
     conn.execute("CREATE INDEX IF NOT EXISTS idx_decisions_archived ON decisions(archived_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_decisions_source ON decisions(source)")

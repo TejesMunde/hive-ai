@@ -16,13 +16,17 @@ def _decision_exists(conn, decision_id: str) -> bool:
     ).fetchone() is not None
 
 
-def write_memory(record_type: str, project: str, data: dict) -> dict:
+def write_memory(record_type: str, project: str, data: dict, source: str | None = None) -> dict:
     """
     The only way to write anything to Hive memory.
 
     record_type : 'decision' | 'snapshot' | 'open_task' | 'dead_end'
     project     : project slug, e.g. 'hive-api'
     data        : dict with fields for that record type
+    source      : Phase 6 provenance tag. None/'agent' = via API,
+                  'git-hook' = machine-extracted, 'human-reviewed' = promoted.
+                  Recorded on decisions + carried onto staged rows. Does NOT
+                  bypass the guard — machine writes pass every rule like any other.
 
     Returns:
       { "status": "committed"|"staged"|"auto_rejected"|"rejected",
@@ -48,9 +52,10 @@ def write_memory(record_type: str, project: str, data: dict) -> dict:
             audit_log(project, "write_auto_rejected",
                       {"type": record_type, "category": cat, "reason": reason})
             return {"status": "auto_rejected", "id": None, "reason": reason}
-        send_to_staging(record_type, project, data, reason)
+        send_to_staging(record_type, project, data, reason, source)
         audit_log(project, "write_staged",
-                  {"type": record_type, "category": cat, "reason": reason})
+                  {"type": record_type, "category": cat, "reason": reason,
+                   "source": source})
         return {"status": "staged", "id": None, "reason": reason}
 
     record_id = str(uuid.uuid4())
@@ -71,8 +76,8 @@ def write_memory(record_type: str, project: str, data: dict) -> dict:
         if record_type == "decision":
             conn.execute(
                 """INSERT INTO decisions
-                   (id, project, what, why, agent, created_at, confidence, supersedes_id)
-                   VALUES (?,?,?,?,?,?,?,?)""",
+                   (id, project, what, why, agent, created_at, confidence, supersedes_id, source)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
                 (
                     record_id, project,
                     data.get("what", "").strip(),
@@ -81,6 +86,7 @@ def write_memory(record_type: str, project: str, data: dict) -> dict:
                     now,
                     clamp_confidence(data.get("confidence", 1.0)),
                     sup,
+                    source,
                 ),
             )
             # Phase 4: a superseded decision has been replaced — cold-archive it.
@@ -203,14 +209,14 @@ def promote_from_staging(staging_id: str) -> dict:
         if rtype == "decision":
             conn.execute(
                 """INSERT INTO decisions
-                   (id, project, what, why, agent, created_at, confidence)
-                   VALUES (?,?,?,?,?,?,?)""",
+                   (id, project, what, why, agent, created_at, confidence, source)
+                   VALUES (?,?,?,?,?,?,?,?)""",
                 (
                     record_id, project,
                     data.get("what",  "").strip(),
                     data.get("why",   "").strip(),
                     data.get("agent", "human-reviewed"),
-                    now, 1.0,
+                    now, 1.0, "human-reviewed",
                 ),
             )
         elif rtype == "snapshot":
