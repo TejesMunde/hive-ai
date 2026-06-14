@@ -35,6 +35,8 @@ H.I.V.E/
       policy.py          ← per-project guard_policy + tune_policies() learner
       audit.py           ← append-only event log (read/aggregate helpers)
       decay.py           ← Phase 4: confidence decay + archive constants (pure)
+      handoff.py         ← Phase 5: handoff packets (state + delta-since-last)
+      routing.py         ← Phase 5: expertise routing (decay-aware relevance)
     cli/
       staging.py         ← staging review CLI: list/accept/reject/clear/stats/tune/review
       audit.py           ← audit log CLI: tail/counts/fails
@@ -110,10 +112,25 @@ build notes in `Phases/Phase_4.md`.
   degrades to the v1 swapped-noun heuristic when dense is off.
 - `tests/test_day9.py` green; days 1–8 + `bench_recall` unchanged (79.2/91.7/0.856).
 
+**Phase 5 — IMPLEMENTED on branch `phase-5-handoff-routing` (pending merge).** Design +
+build notes in `Phases/Phase_5.md`.
+- **Handoff packets** (`core/handoff.py`, `handoffs` table): `create_handoff(project,
+  from_agent, to_agent)` persists a packet = current `state` (open tasks + snapshot +
+  top decisions, via `read_memory`) + `delta` since the *previous* handoff
+  (decisions/dead_ends added, tasks opened/closed). First handoff → `since=None`,
+  full history; consecutive no-activity handoff → empty delta. `get_handoff` /
+  `latest_handoff` read packets back. `open_tasks.closed_at` added (migration) so
+  the delta can report tasks closed *within* an interval.
+- **Expertise routing** (`core/routing.py`): `route_task(project, task)` ranks agents
+  by `Σ relevance(task, their live decisions) × effective_confidence` — IDF-overlap
+  (+ optional dense blend), decay-aware so fresh expertise outranks stale. Advisory
+  only: returns ranked agents + evidence decisions, **never mutates / auto-assigns**.
+- `tests/test_day10.py` green; days 1–9 + `bench_recall` unchanged (Phase 5 adds no
+  retrieval-path change).
+
 ---
 
 ## Dependencies
-
 Phase 1 was pure stdlib. **Phase 2 adds `numpy` and `fastembed`** (ONNX runtime).
 These are required for the dense/hybrid retrieval path. Pure-stdlib code paths
 must still work when `fastembed` is absent (reader degrades to TF-IDF).
@@ -277,7 +294,7 @@ One corrupt record poisons every future agent call that retrieves it.
 
 ---
 
-## Storage — SQLite, 9 tables
+## Storage — SQLite, 10 tables
 
 | Table | Role |
 |---|---|
@@ -290,6 +307,7 @@ One corrupt record poisons every future agent call that retrieves it.
 | `guard_policy`        | per-project per-category action (`stage`/`auto_reject`); PK `(project, category)` |
 | `audit_log`           | append-only event stream — every write + every query |
 | `decision_embeddings` | cached float32 embeddings per decision (model + dim + BLOB) |
+| `handoffs`            | persisted agent handoff packets (state + delta JSON); delta boundary = prior handoff (Phase 5) |
 
 `PRAGMA foreign_keys = ON`. Row factory `sqlite3.Row`. DB path overridable via
 env `HIVE_DB_PATH` (default `hive.db`).
@@ -333,6 +351,7 @@ PYTHONIOENCODING=utf-8 python tests/test_day1.py
 # … through …
 PYTHONIOENCODING=utf-8 python tests/test_day8.py   # Phase 3: dead ends + provenance
 PYTHONIOENCODING=utf-8 python tests/test_day9.py   # Phase 4: decay + archive + contradiction v2
+PYTHONIOENCODING=utf-8 python tests/test_day10.py  # Phase 5: handoff packets + expertise routing
 
 # Retrieval benchmarks
 PYTHONIOENCODING=utf-8 python tests/bench_recall.py
@@ -404,8 +423,19 @@ sweep_archive(project="hive-api")    # archive decisions whose decayed conf < 0.
 # stale/superseded decisions drop out of read_memory unless include_archived=True
 ```
 
----
-## Roadmap
+Handing off to the next agent / routing work (Phase 5):
+```python
+from hive import create_handoff, latest_handoff, route_task
+packet = create_handoff("hive-api", from_agent="claude-code", to_agent="next")
+# packet["state"] = open tasks + snapshot + top decisions
+# packet["delta"] = what changed since the previous handoff
+prev = latest_handoff("hive-api")               # most recent packet
+
+ranked = route_task("hive-api", "add rate limiting to the public API")
+# -> [{agent, score, evidence:[{decision_id, what, relevance}]}] ; advisory only
+```
+
+---## Roadmap
 
 - **Phase 1** — Core memory, write guard, staging, audit, auto-tune. ✅ Shipped.
 - **Phase 2** — Semantic embeddings (`bge-small-en-v1.5`), hybrid RRF retrieval.
@@ -417,9 +447,11 @@ sweep_archive(project="hive-api")    # archive decisions whose decayed conf < 0.
 - **Phase 4** — Confidence decay (lazy half-life), cold archive, contradiction
   detection v2. ✅ Implemented + tested on branch `phase-4-decay-archive`
   (test_day9 green; retrieval benchmark unmoved). Design log in `Phases/Phase_4.md`.
-- **Phase 5**: Agent handoff packets, expertise routing
+- **Phase 5** — Agent handoff packets (persisted state + delta), expertise routing
+  (decay-aware, advisory). ✅ Implemented + tested on branch `phase-5-handoff-routing`
+  (test_day10 green; retrieval benchmark unmoved). Design log in `Phases/Phase_5.md`.
 - **Phase 6**: Git hooks, file watcher, auto-learning, path selection
 
-*Last updated: Phase 4 implemented on `phase-4-decay-archive` — confidence decay +
-cold archive + contradiction v2; test_day9 green, days 1–8 + retrieval unchanged
+*Last updated: Phase 5 implemented on `phase-5-handoff-routing` — handoff packets +
+expertise routing; test_day10 green, days 1–9 + retrieval unchanged
 (79.2/91.7/0.856). Pending merge to main.*

@@ -158,8 +158,8 @@ def close_task(task_id: str) -> dict:
             "SELECT project FROM open_tasks WHERE id=?", (task_id,)
         ).fetchone()
         cur = conn.execute(
-            "UPDATE open_tasks SET status='done' WHERE id=? AND status='open'",
-            (task_id,),
+            "UPDATE open_tasks SET status='done', closed_at=? WHERE id=? AND status='open'",
+            (datetime.now(timezone.utc).isoformat(), task_id),
         )
         conn.commit()
         if cur.rowcount == 0:

@@ -138,8 +138,20 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_history_category    ON staging_history(category);
             CREATE INDEX IF NOT EXISTS idx_audit_project_kind  ON audit_log(project, kind);
             CREATE INDEX IF NOT EXISTS idx_audit_created       ON audit_log(created_at);
+            -- Phase 5: agent handoff packets. Persisted so each new packet can
+            -- compute the delta since the previous handoff for the project.
+            CREATE TABLE IF NOT EXISTS handoffs (
+                id          TEXT PRIMARY KEY,
+                project     TEXT NOT NULL,
+                from_agent  TEXT,
+                to_agent    TEXT,
+                payload     TEXT NOT NULL,   -- JSON: full packet (state + delta)
+                created_at  TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_dead_ends_project   ON dead_ends(project);
             CREATE INDEX IF NOT EXISTS idx_dead_ends_chosen    ON dead_ends(chosen_decision_id);
+            CREATE INDEX IF NOT EXISTS idx_handoffs_project    ON handoffs(project, created_at);
             """
         )
         _migrate(conn)
@@ -160,6 +172,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
         # SQLite cannot ALTER-ADD a column with an inline REFERENCES clause; the
         # app-level FK usage + index is sufficient (FK enforced per insert).
         conn.execute("ALTER TABLE decisions ADD COLUMN supersedes_id TEXT")
+    task_cols = {row["name"] for row in conn.execute("PRAGMA table_info(open_tasks)")}
+    if "closed_at" not in task_cols:
+        # Phase 5: timestamp task closure so handoff deltas can report tasks
+        # closed *within* an interval (not just current open/done state).
+        conn.execute("ALTER TABLE open_tasks ADD COLUMN closed_at TEXT")
     if "archived_at" not in cols:
         # Phase 4: cold archive flag for pre-existing decisions tables.
         conn.execute("ALTER TABLE decisions ADD COLUMN archived_at TEXT")

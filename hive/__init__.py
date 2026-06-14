@@ -6,6 +6,8 @@ from hive.core.writer import (
     reinforce_decision, archive_decision, unarchive_decision, sweep_archive,
 )
 from hive.core.reader import read_memory, get_provenance
+from hive.core.handoff import create_handoff, get_handoff, latest_handoff
+from hive.core.routing import route_task
 
 __all__ = [
     "init_db",
@@ -20,4 +22,8 @@ __all__ = [
     "archive_decision",
     "unarchive_decision",
     "sweep_archive",
+    "create_handoff",
+    "get_handoff",
+    "latest_handoff",
+    "route_task",
 ]
