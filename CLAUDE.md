@@ -470,12 +470,17 @@ Auto-capturing decisions from git commits (Phase 6) — quality floor, not a byp
 python -m hive.cli.hook install            # idempotent post-commit hook (per repo)
 python -m hive.cli.capture <sha>           # what the hook runs; extract → guard → write
 python -m hive.cli.capture stats           # decisions at conf 1.0, by source, skip reasons
+python -m hive.cli.capture calibrate 50    # LOG-ONLY pre-filter pass-rate + verdict (no writes)
 python -m hive.cli.hook uninstall          # removes only Hive's hook block
 ```
 Only commits carrying decision language (`chose … over`, `switched to`, `because`, …)
-clear the floor; survivors go through the FULL guard at confidence 0.6, tagged
+clear the floor; cues are `\b`-anchored so code identifiers (`chosen_decision_id`)
+don't misfire. Survivors go through the FULL guard at confidence 0.6, tagged
 `source='git-hook'`. Sub-threshold commits are dropped + audited, never staged. The
-hook writes decisions + a snapshot only — never a handoff.
+hook writes decisions + a snapshot only — never a handoff. **Post-merge task:** once a
+repo has ~50 normal commits, run `capture calibrate 50` and act on the verdict
+(`TOO_BROAD` >40% → tighten cues; `OK` 15–40% → validated). Calibration on *this*
+repo is `TOO_NARROW` by construction (10 squashed phase commits) — see `Phase_6.md`.
 ---## Roadmap
 
 - **Phase 1** — Core memory, write guard, staging, audit, auto-tune. ✅ Shipped.

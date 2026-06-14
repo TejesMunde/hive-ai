@@ -34,11 +34,20 @@ _DECISION_TYPES = {"feat", "fix", "refactor", "perf"}
 
 # Decision language. Kept aligned with guard._REPLACE_CUES so the floor admits the
 # same opposition/replacement vocabulary the contradiction detector understands.
+# Matched on WORD BOUNDARIES (see _CUE_RE) so code identifiers like `chosen_decision_id`,
+# `over_count`, or `because_flag` do NOT count as decision language — substring matches
+# were a precision leak that would let build-log bodies misfire as decisions.
 _DECISION_CUES = (
-    "chose", "chosen", " over ", "switched to", "switch to", "instead of",
-    "rather than", "because", "replaced", "replace ", "migrated to", "migrate to",
-    "decided to", "decided ", "opted for", "opted ", "in favor of", "moved to",
+    "chose", "chosen", "over", "switched to", "switch to", "instead of",
+    "rather than", "because", "replaced", "replace", "migrated to", "migrate to",
+    "decided to", "decided", "opted for", "opted", "in favor of", "moved to",
     "adopted", "settled on", "going with", "went with",
+)
+
+# One alternation, longest-first so multi-word cues win, each \b-anchored.
+_CUE_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(c) for c in sorted(_DECISION_CUES, key=len, reverse=True)) + r")\b",
+    re.IGNORECASE,
 )
 
 _CONVENTIONAL = re.compile(r"^(?P<type>[a-z]+)(?:\([^)]*\))?(?P<bang>!)?:\s*(?P<rest>.+)$")
@@ -108,8 +117,7 @@ def _first_paragraph(body: str) -> str:
 
 
 def _has_cue(text: str) -> bool:
-    low = (text or "").lower()
-    return any(cue in low for cue in _DECISION_CUES)
+    return bool(_CUE_RE.search(text or ""))
 
 
 def extract_decision(info: CommitInfo) -> Candidate | Skip:

@@ -1,6 +1,8 @@
 # Phase 6 — Automated capture: git-commit decision extraction
 
-**Status: DESIGN → IN PROGRESS.** Branch `phase-6-git-capture`.
+**Status: IMPLEMENTED + TESTED.** Branch `phase-6-git-capture` (PR #5). Calibration
+on this repo returned `TOO_NARROW` (pathological sample — see Calibration below);
+re-run after ~50 normal commits is a documented post-merge task.
 
 Phase 6 is where Hive stops depending on an agent *choosing* to call `write_memory`
 and starts capturing decisions from the work itself. That makes it the first
@@ -85,10 +87,11 @@ A commit becomes a decision candidate **only if all hold**:
    OR (no prefix) the subject is ≥ 5 words. `chore/docs/style/test/build/ci`,
    merge commits, and version-bump subjects are skipped outright.
 2. **Decision-cue gate.** Message body (or subject) contains at least one cue from
-   `_DECISION_CUES` — reusing the opposition/replacement vocabulary the guard's
-   contradiction detector already trusts: `chose`, ` over `, `switched to`,
-   `instead of`, `rather than`, `because`, `replaced … with`, `migrated to`,
-   `decided to`, `opted for`, `in favor of`.
+   `_DECISION_CUES`, matched as `\b`-anchored regex (so code identifiers like
+   `chosen_decision_id` do NOT count) — reusing the opposition/replacement vocabulary
+   the guard's contradiction detector trusts: `chose`, `over`, `switched to`,
+   `instead of`, `rather than`, `because`, `replaced`, `migrated to`, `decided to`,
+   `opted for`, `in favor of`, `adopted`.
 3. **Substance gate.** The extracted `what` is ≥ 5 words (so it clears the guard's
    vagueness rule on its own merits — we do not want machine writes to fail the
    guard *en masse* and become staging noise; the floor should pass only writes the
@@ -165,6 +168,52 @@ End-to-end (temp DB, monkeypatched `git show` text — still through real
 
 Regression gate (unchanged, must stay green):
 - days 1–10, `bench_recall` → **79.2 / 91.7 / 0.856**.
+
+---
+
+## Calibration — pre-filter precision on real history
+
+The pre-filter was run **log-only** (writes nothing) against this repo's real commit
+history via the committed tool `python -m hive.cli.capture calibrate [N]`, which
+reports pass-rate + skip breakdown and an automatic verdict:
+`TOO_BROAD (>40%, staging-flood risk)` / `OK (15–40%, filtering noise)` /
+`TOO_NARROW (<15%)`.
+
+**Result on this repo (2026-06-14): `TOO_NARROW` — 10.0% pass (1/10).**
+`skip no_cue 50%`, `skip type_gate 40%` (4 merge commits).
+
+This number is **not a valid calibration of the cue set**, and is recorded as such:
+the sample is pathological *by construction*. This repo has 10 commits — 4 GitHub
+merge commits + 6 squashed per-phase mega-commits — not normal dev-cadence history.
+The 15–40% healthy band assumes typical commit granularity, which does not exist here
+yet. The single pass is a genuine decision (`chose … over … because`), so the filter
+behaves correctly on real input; only the denominator is degenerate.
+
+**What the calibration run actually delivered** — a real precision bug, caught by
+inspecting *why* commits passed, not by a synthetic test:
+- The first run showed 20% (2/10). One pass (`404f959`) matched **only** because the
+  cue `chosen` was a substring of the code identifier `chosen_decision_id` in the
+  commit body — not decision language. Substring cue matching was a precision leak
+  that would misfire on identifiers like `chosen_`, `over_count`, `because_flag` and
+  pollute memory with non-decisions.
+- **Fixed:** cues are now matched as `\b`-anchored regex (`_CUE_RE`), longest-first.
+  Regression-locked by a `test_day11` case (`chosen_decision_id` → `Skip(no_cue)`).
+- After the fix, the false positive correctly drops; pass rate falls to 10% (1/10),
+  the one remaining pass being a true decision.
+
+### POST-MERGE TASK (documented, not deferred)
+
+The calibration that the 15–40% band is meant to judge can only be measured on
+real dev-cadence history — which **only accrues after the hook is installed and
+running**. The pre-merge calibration is therefore impossible by construction, not by
+omission.
+
+> **TODO (post-merge):** once this repo (or any repo the hook is installed into) has
+> accumulated ~50 normal-granularity commits, re-run
+> `python -m hive.cli.capture calibrate 50` and record the verdict. If `TOO_BROAD`
+> (>40%), the cue set is too permissive and risks staging/memory flooding — tighten
+> `_DECISION_CUES`. If `OK` (15–40%), the floor is validated on real data. This is a
+> required follow-up, owned by whoever first runs Hive against live history.
 
 ---
 

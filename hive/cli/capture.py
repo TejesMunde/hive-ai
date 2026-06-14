@@ -156,6 +156,38 @@ def stats(project: str | None = None) -> dict:
     }
 
 
+def calibrate(n: int = 50, repo: str | None = None) -> dict:
+    """
+    LOG-ONLY: run the pre-filter over the last `n` real commits and report the
+    pass rate + skip-reason breakdown. Writes NOTHING — pure calibration so we can
+    tell noise-filtering (healthy ~15–40% pass) from cue-too-broad (>40% = staging
+    flood risk) on real history, not synthetic commits.
+    """
+    raw = _run_git(["log", f"-{n}", "--format=%H%x1f%B%x1e"], repo)
+    records = [r for r in raw.split("\x1e") if r.strip()]
+    passed = 0
+    reasons: dict[str, int] = {}
+    rows = []
+    for rec in records:
+        sha, _, msg = rec.strip().partition("\x1f")
+        res = extract_decision(parse_commit(msg))
+        subj = msg.strip().splitlines()[0][:55] if msg.strip() else ""
+        if isinstance(res, Candidate):
+            passed += 1
+            rows.append(("PASS", sha[:8], subj))
+        else:
+            reasons[res.reason] = reasons.get(res.reason, 0) + 1
+            rows.append((f"skip:{res.reason}", sha[:8], subj))
+    total = len(records)
+    rate = (passed / total) if total else 0.0
+    verdict = ("EMPTY" if not total
+               else "TOO_BROAD (staging-flood risk)" if rate > 0.40
+               else "OK (filtering noise)" if rate >= 0.15
+               else "TOO_NARROW (or atypical history)")
+    return {"total": total, "passed": passed, "pass_rate": rate,
+            "skipped": reasons, "verdict": verdict, "rows": rows}
+
+
 def main() -> None:
     args = sys.argv[1:]
     project = None
@@ -178,9 +210,20 @@ def main() -> None:
         print(f"  extract skipped         : {s['skipped']}")
         return
 
+    if rest and rest[0] == "calibrate":
+        n = int(rest[1]) if len(rest) > 1 else 50
+        c = calibrate(n, repo=repo)
+        print(f"  commits analyzed : {c['total']}")
+        print(f"  PASS (candidate) : {c['passed']}  ({100*c['pass_rate']:.1f}%)")
+        for r, k in sorted(c["skipped"].items()):
+            print(f"  skip {r:<10} : {k}  ({100*k/c['total']:.1f}%)" if c['total'] else f"  skip {r}: {k}")
+        print(f"  verdict          : {c['verdict']}")
+        return
+
     if not rest:
-        print("usage: python -m hive.cli.capture <sha> [--project P] [--repo PATH]")
-        print("       python -m hive.cli.capture stats [--project P]")
+        print("usage: python -m hive.cli.capture <sha>      [--project P] [--repo PATH]")
+        print("       python -m hive.cli.capture stats      [--project P]")
+        print("       python -m hive.cli.capture calibrate [N] [--repo PATH]")
         sys.exit(2)
 
     capture_commit(rest[0], project=project, repo=repo)

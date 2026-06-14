@@ -81,6 +81,12 @@ def test_extractor():
     assert r.why, "why should fall back to the 'because' subject"
     _passed("prefix-less long subject with 'because' -> Candidate")
 
+    # Boundary bug regression: cue substrings inside CODE IDENTIFIERS must NOT fire.
+    # `chosen_decision_id`, `over_count`, `because_flag` are not decision language.
+    r = _extract("feat: add chosen_decision_id column and over_count to the schema")
+    assert isinstance(r, Skip) and r.reason == "no_cue", r
+    _passed("cue inside identifier (chosen_decision_id) -> Skip(no_cue), not a match")
+
 
 def test_capture_through_guard():
     print("\n--- B. End-to-end capture: real guard, reduced confidence, tagged ---")
