@@ -170,11 +170,48 @@ def test_hook_render():
     _passed("uninstall of Hive-only hook signals full removal")
 
 
+def test_self_init():
+    print("\n--- E. capture/stats self-migrate a stale/pre-Phase-6 DB ---")
+    # The hook can fire against a repo whose hive.db predates the Phase 6 `source`
+    # migration (an old `decisions` table with no `source` column). capture_commit
+    # + stats must call init_db() themselves so they never hit `no such column:
+    # source`. NOTE: get_connection() reads the module-global DB_PATH captured at
+    # import, so we patch that global — mutating os.environ mid-run would be a no-op.
+    import sqlite3
+    import hive.db.setup as setup
+    fresh = os.path.join(_TMP, "preP6.db")
+    # Seed an OLD-schema decisions table (pre-source) to reproduce the live bug.
+    conn = sqlite3.connect(fresh)
+    conn.execute("CREATE TABLE decisions (id TEXT PRIMARY KEY, project TEXT NOT NULL, "
+                 "what TEXT NOT NULL, why TEXT, agent TEXT, created_at TEXT NOT NULL, "
+                 "confidence REAL DEFAULT 1.0)")
+    conn.commit(); conn.close()
+
+    old_path = setup.DB_PATH
+    setup.DB_PATH = fresh
+    try:
+        # stats() against the pre-Phase-6 schema must NOT raise on `source`.
+        s = stats("anything")
+        assert s["live_decisions"] == 0 and s["by_source"] == {}, s
+        # capture that errors (not a git repo) still must not raise on schema.
+        r = capture_commit("deadbeef", project="anything", repo=_TMP)
+        assert r["status"] in ("error", "skipped"), r
+        # The migration ran: `source` column now present on the old table.
+        conn = sqlite3.connect(fresh)
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(decisions)")}
+        conn.close()
+        assert "source" in cols, cols
+        _passed("stats + capture self-migrate a pre-Phase-6 DB (source column added)")
+    finally:
+        setup.DB_PATH = old_path
+
+
 def main():
     test_extractor()
     test_capture_through_guard()
     test_stats()
     test_hook_render()
+    test_self_init()
     print("\n------------------------------------------------------------")
     print("  Day 11 / Phase 6 complete — all assertions passed")
     print("------------------------------------------------------------")

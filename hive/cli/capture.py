@@ -28,8 +28,7 @@ from pathlib import Path
 from hive.core.extract import parse_commit, extract_decision, Candidate
 from hive.core.writer import write_memory
 from hive.core.audit import log as audit_log
-from hive.db.setup import get_connection
-
+from hive.db.setup import get_connection, init_db
 # Machine writes arrive below the 1.0 human ceiling so they rank slightly lower
 # until reinforced. Not auto-reinforced (avoids the cap-pressure feedback loop).
 MACHINE_CONFIDENCE = 0.6
@@ -73,6 +72,11 @@ def capture_commit(sha: str, project: str | None = None, repo: str | None = None
     Extract a decision from one commit and (if it clears the floor) write it.
     Returns a status dict. Pure-extractor decisions go through the real guard.
     """
+    # Self-sufficient: the hook may fire against a repo whose hive.db was never
+    # initialised, or one created before a schema bump. init_db() is idempotent
+    # (creates tables + runs migrations), so capture never writes into a stale
+    # schema (e.g. missing the Phase 6 `source` column).
+    init_db()
     project = project or _default_project(repo)
     try:
         raw = _run_git(["show", "-s", "--format=%B", sha], repo)
@@ -111,6 +115,7 @@ def stats(project: str | None = None) -> dict:
       - live decision counts by source,
       - extract_skipped counts by reason.
     """
+    init_db()  # idempotent — tolerate a stale/uninitialised schema.
     conn = get_connection()
     try:
         where = "WHERE archived_at IS NULL"
