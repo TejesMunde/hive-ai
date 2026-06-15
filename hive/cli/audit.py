@@ -47,7 +47,8 @@ def cmd_tail(project, limit):
              f"{(' for ' + project) if project else ''}\n", BOLD))
     for r in rows:
         color = KIND_COLOR.get(r["kind"], DIM)
-        head  = f"  {r['created_at'][11:19]}  {_c(r['kind']:<22, color)}  {r['project'][:14]:<14}"
+        kind  = _c(f"{r['kind']:<22}", color)
+        head  = f"  {r['created_at'][11:19]}  {kind}  {r['project'][:14]:<14}"
         body  = json.dumps(r["payload"])[:90]
         print(f"{head}  {body}")
     print()
@@ -63,7 +64,8 @@ def cmd_counts(project):
              f"{(' for ' + project) if project else ''}  (total {total})\n", BOLD))
     for kind in sorted(c, key=lambda k: -c[k]):
         color = KIND_COLOR.get(kind, DIM)
-        print(f"  {_c(kind:<22, color)} {c[kind]:>6}")
+        label = _c(f"{kind:<22}", color)
+        print(f"  {label} {c[kind]:>6}")
     print()
 
 
@@ -77,7 +79,8 @@ def cmd_fails(project):
     for r in rows:
         color = KIND_COLOR.get(r["kind"], RED)
         cat   = r["payload"].get("category") or r["payload"].get("reason", "")
-        print(f"  {r['created_at'][11:19]}  {_c(r['kind']:<22, color)}  "
+        kind  = _c(f"{r['kind']:<22}", color)
+        print(f"  {r['created_at'][11:19]}  {kind}  "
               f"{r['project'][:14]:<14}  {cat[:60]}")
     print()
 
