@@ -46,7 +46,7 @@ def main():
 
     print("\n--- Confidence decay (pure read-time function) ---")
     now = datetime.now(timezone.utc)
-    assert abs(effective_confidence(1.0, now.isoformat()) - 1.0) < 1e-12
+    assert effective_confidence(1.0, now.isoformat(), now) == 1.0
     half = (now - timedelta(days=HALF_LIFE_DAYS)).isoformat()
     assert abs(effective_confidence(1.0, half) - 0.5) < 1e-6, "half-life math wrong"
     assert abs(effective_confidence(0.8, half) - 0.4) < 1e-6  # decay is linear in stored
