@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from hive.db.setup import get_connection
 from hive.core.normalize import normalize_tokens
-from hive.core.reader import _build_idf, _idf_score
+from hive.core.reader import build_idf, idf_score
 from hive.core.decay import effective_confidence
 
 EVIDENCE_K = 3   # top matching decisions surfaced per agent
@@ -56,7 +56,7 @@ def route_task(project: str, task: str, top_n: int = 3) -> list[dict]:
 
     # IDF over the live project corpus — mirrors the reader's keyword relevance.
     corpus = [normalize_tokens(f'{r["what"]} {r["why"] or ""}') for r in rows]
-    idf = _build_idf(corpus)
+    idf = build_idf(corpus)
 
     # Optional dense relevance, blended like the reader's hybrid path.
     dense_rel: dict[str, float] = {}
@@ -74,7 +74,7 @@ def route_task(project: str, task: str, top_n: int = 3) -> list[dict]:
 
     per_agent: dict[str, dict] = {}
     for i, r in enumerate(rows):
-        kw = _idf_score(q_tokens, corpus[i], idf)
+        kw = idf_score(q_tokens, corpus[i], idf)
         rel = kw + dense_rel.get(r["id"], 0.0) if dense_rel else kw
         if rel <= 0.0:
             continue

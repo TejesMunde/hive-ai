@@ -1,0 +1,20 @@
+{
+  "name": "hive-mind",
+  "version": "0.1.0",
+  "description": "Persistent, cross-agent memory for AI coding agents — npm launcher for the Python `hive` CLI.",
+  "keywords": ["ai", "agents", "memory", "llm", "claude", "coding-agent", "cli"],
+"homepage": "https://github.com/TejesMunde/hive-ai",
+"repository": { "type": "git", "url": "git+https://github.com/TejesMunde/hive-ai.git" },
+"bugs": { "url": "https://github.com/TejesMunde/hive-ai/issues" },
+  "license": "MIT",
+  "author": "TejesMunde",
+  "main": "bin/cli.js",
+  "bin": { "hive": "bin/cli.js" },
+  "files": ["bin/", "README.md"],
+  "engines": { "node": ">=16" },
+  "preferGlobal": true,
+  "os": ["darwin", "linux", "win32"],
+  "scripts": {
+    "prepublishOnly": "node -e \"require('./bin/cli.js').toString()\""
+  }
+}

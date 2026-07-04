@@ -1,0 +1,68 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hive-ai"
+dynamic = ["version"]
+description = "Persistent, cross-agent memory for AI coding agents — a write-guarded, hybrid-retrieval decision store."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "TejesMunde" }]
+keywords = [
+    "ai", "agents", "memory", "llm", "retrieval", "embeddings",
+    "claude", "coding-agent", "rag", "sqlite",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# Core is PURE STDLIB — keep this empty. The semantic (dense) retrieval layer is
+# strictly optional; the reader degrades to TF-IDF when it is absent.
+dependencies = []
+
+[project.optional-dependencies]
+dense = ["numpy", "fastembed"]
+
+[project.urls]
+Homepage = "https://github.com/TejesMunde/hive-ai"
+Repository = "https://github.com/TejesMunde/hive-ai"
+Issues = "https://github.com/TejesMunde/hive-ai/issues"
+
+[project.scripts]
+hive = "hive.cli.main:main"
+
+[tool.hatch.version]
+path = "hive/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["hive"]
+
+[tool.hatch.build.targets.sdist]
+# Ship the source + docs, but never the live DB, the stray ruvector artifact,
+# the eval/bench scaffolding, or caches.
+include = [
+    "hive/",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml",
+]
+exclude = [
+    "**/*.db",
+    "**/__pycache__",
+    "tests/",
+    "Phases/",
+    "packaging/",
+    "scripts/",
+    ".github/",
+]

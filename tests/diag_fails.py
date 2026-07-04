@@ -14,6 +14,7 @@ import numpy as np
 
 from hive.core.normalize import normalize_tokens
 from hive.core.embedder import embed_batch
+from hive.core.dense import fuse_and_guard
 
 CORPUS_PATH = os.path.join(os.path.dirname(__file__), "eval_corpus.json")
 RRF_K = 60
@@ -37,19 +38,12 @@ def tfidf_rank(query_tokens, doc_token_sets, idf):
     scores = [(sum(idf.get(t, 1.0) for t in (query_tokens & dts)) / q_weight, i)
               for i, dts in enumerate(doc_token_sets)]
     scores.sort(key=lambda x: -x[0])
-    return [i for _, i in scores]
-
-
-def rrf(ranked_lists, k=RRF_K):
-    fused = defaultdict(float)
-    for lst in ranked_lists:
-        for r, idx in enumerate(lst):
-            fused[idx] += 1.0 / (k + r + 1)
-    return [i for i, _ in sorted(fused.items(), key=lambda x: -x[1])]
+    return [i for _, i in scores], [s for s, _ in scores]
 
 
 def run():
-    data = json.load(open(CORPUS_PATH, encoding="utf-8"))
+    with open(CORPUS_PATH, encoding="utf-8") as f:
+        data = json.load(f)
     decisions = data["decisions"]
     queries = data["queries"]
     id_to_idx = {d["id"]: i for i, d in enumerate(decisions)}
@@ -62,9 +56,9 @@ def run():
     fails_by_cat = defaultdict(list)
     for qi, q in enumerate(queries):
         exp = id_to_idx[q["expected_id"]]
-        r_tf = tfidf_rank(normalize_tokens(q["query"]), doc_tokens, idf)
+        r_tf, r_tf_scores = tfidf_rank(normalize_tokens(q["query"]), doc_tokens, idf)
         r_de = list(np.argsort(-(doc_vecs @ q_vecs[qi])))
-        r_hy = rrf([r_tf, r_de])
+        r_hy = fuse_and_guard(r_tf, r_de, tfidf_has_signal=True, tfidf_scores=r_tf_scores)
         if r_hy[0] != exp:
             fails_by_cat[q["category"]].append({
                 "query": q["query"],

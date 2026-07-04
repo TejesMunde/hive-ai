@@ -13,10 +13,13 @@ from __future__ import annotations
 import json
 import math
 import os
+import sys
 import time
 from collections import defaultdict
 
 import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from hive.core.normalize import normalize_tokens
 from hive.core.embedder import embed_batch

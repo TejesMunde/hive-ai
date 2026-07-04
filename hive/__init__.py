@@ -1,5 +1,7 @@
 """Hive Mind public API."""
 
+__version__ = "0.1.0"
+
 from hive.db.setup import init_db, get_connection
 from hive.core.writer import (
     write_memory, close_task, promote_from_staging, reject_from_staging,
@@ -10,6 +12,7 @@ from hive.core.handoff import create_handoff, get_handoff, latest_handoff
 from hive.core.routing import route_task
 
 __all__ = [
+    "__version__",
     "init_db",
     "get_connection",
     "write_memory",
@@ -38,3 +41,7 @@ def __getattr__(name):
         from hive.cli.capture import capture_commit
         return capture_commit
     raise AttributeError(f"module 'hive' has no attribute '{name}'")
+
+
+def __dir__():
+    return sorted(__all__)

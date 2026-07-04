@@ -43,7 +43,7 @@ def _estimate_tokens(text: str) -> int:
     return max(1, len(text) // CHARS_PER_TOKEN)
 
 
-def _build_idf(corpus: list[set[str]]) -> dict[str, float]:
+def build_idf(corpus: list[set[str]]) -> dict[str, float]:
     """Smoothed IDF over the project corpus."""
     n = len(corpus)
     if n == 0:
@@ -55,7 +55,7 @@ def _build_idf(corpus: list[set[str]]) -> dict[str, float]:
     return {tok: math.log((n + 1) / (count + 1)) + 1 for tok, count in df.items()}
 
 
-def _idf_score(q_tokens: set[str], doc_tokens: set[str], idf: dict[str, float]) -> float:
+def idf_score(q_tokens: set[str], doc_tokens: set[str], idf: dict[str, float]) -> float:
     if not q_tokens:
         return 0.0
     q_weight = sum(idf.get(t, 1.0) for t in q_tokens)
@@ -142,15 +142,15 @@ def read_memory(project: str, query: str = "", include_archived: bool = False) -
             prepped.append((row, what_toks, combined_toks))
             corpus_tokens.append(combined_toks)
 
-        idf = _build_idf(corpus_tokens)
+        idf = build_idf(corpus_tokens)
         n_docs = max(len(prepped), 1)
 
         scored = []
         base_by_id: dict[str, float] = {}
         for idx, (row, what_toks, combined_toks) in enumerate(prepped):
-            base = _idf_score(q_tokens, combined_toks, idf)
+            base = idf_score(q_tokens, combined_toks, idf)
             base_by_id[row["id"]] = base
-            what_hit = _idf_score(q_tokens, what_toks, idf)
+            what_hit = idf_score(q_tokens, what_toks, idf)
             boost = base + (what_hit * WHAT_BOOST)
 
             # Linear recency boost — newest doc gets +RECENCY_WEIGHT, oldest +0.

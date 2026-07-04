@@ -1,0 +1,60 @@
+name: publish
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install numpy fastembed
+      - run: python tests/test_day1.py
+      - run: python tests/test_day2.py
+      - run: python tests/test_day3.py
+      - run: python tests/test_day4.py
+      - run: python tests/test_day5.py
+      - run: python tests/test_day6.py
+      - run: python tests/test_day7.py
+      - run: python tests/test_day8.py
+      - run: python tests/test_day9.py
+      - run: python tests/test_day10.py
+      - run: python tests/test_day11.py
+
+  publish-pypi:
+    needs: [test]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install build
+      - run: python -m build
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-npm:
+    needs: [test]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packaging/npm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+      - run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

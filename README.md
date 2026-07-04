@@ -50,20 +50,51 @@ opinionated about **quality** and **trust**:
 
 ## Install
 
-```bash
-git clone https://github.com/TejesMunde/hive-mind.git
-cd hive-mind
+Pick whichever fits your stack — all three install the same `hive` CLI and the
+importable `hive` Python package:
 
-# Core is pure stdlib. For the semantic (dense) retrieval layer:
-pip install numpy fastembed
+```bash
+# Python (recommended)
+pipx install hive-mind          # isolated, or:
+pip install hive-mind
+
+# npm (thin launcher around the Python package — needs Python 3.10+)
+npm install -g hive-mind
+
+# curl
+curl -fsSL https://raw.githubusercontent.com/TejesMunde/hive-mind/main/install.sh | sh
+# Windows PowerShell:
+#   irm https://raw.githubusercontent.com/TejesMunde/hive-mind/main/install.ps1 | iex
 ```
 
-The dense path is **optional** — if `fastembed` is absent or `HIVE_DENSE=0`, the
-reader degrades silently to TF-IDF.
+> The npm and curl installers bootstrap the Python package, so **Python 3.10+** must
+> be on the machine. (Zero-Python standalone binaries are a planned follow-up.)
+
+The **semantic (dense) retrieval layer is optional**. Install it as an extra; without
+it the reader degrades silently to TF-IDF:
+
+```bash
+pip install "hive-mind[dense]"      # adds numpy + fastembed
+```
+
+Verify, then use it:
+
+```bash
+hive --version
+hive --help
+```
 
 ```python
 from hive import init_db
 init_db()   # idempotent: creates tables + runs migrations
+```
+
+### From source
+
+```bash
+git clone https://github.com/TejesMunde/hive-ai.git
+cd hive-mind
+pip install -e ".[dense]"
 ```
 
 ---
@@ -202,11 +233,31 @@ is auto-rejected only if the system *learned* that category is reliably wrong fo
 this project. Review staged records:
 
 ```bash
-python -m hive.cli.staging list          # pending review
-python -m hive.cli.staging accept <id>   # promote to the store
-python -m hive.cli.staging tune          # learn auto-reject policies from history
-python -m hive.cli.audit   tail          # append-only event log
+hive staging list            # pending review
+hive staging accept <id>     # promote to the store
+hive staging tune            # learn auto-reject policies from history
+hive audit tail              # append-only event log
 ```
+
+---
+
+## Command-line interface
+
+Once installed, everything is under one `hive` command:
+
+```bash
+hive recall   <project> "<query>"          # retrieve ranked context (JSON)
+hive remember <project> "<what>" "<why>"   # record a decision (through the guard)
+hive capture  <sha> | stats | calibrate    # extract decisions from git commits
+hive hook     install | uninstall | status # post-commit capture hook
+hive staging  list | accept | reject | …   # review guard-flagged writes
+hive audit    tail | counts | fails        # append-only event log
+hive init                                  # inject Hive usage block into agent configs
+hive --version | --help
+```
+
+> Each subcommand is also runnable directly as `python -m hive.cli.<name>` if you
+> prefer not to install the console script.
 
 ---
 
@@ -278,7 +329,9 @@ PYTHONIOENCODING=utf-8 python tests/bench_scale.py
 - **Phase 4** — Confidence decay, cold archive, contradiction detection v2. ✅
 - **Phase 5** — Agent handoff packets, decay-aware expertise routing. ✅
 - **Phase 6** — Git-commit decision extraction (quality floor + post-commit hook). ✅
-- **Later** — file watcher / daemon, vectorized TF-IDF for large corpora, npm binary wrapper.
+- **Phase 7** — Distribution: PyPI + npm + curl install, unified `hive` CLI, MIT license. ✅
+- **Later** — zero-Python standalone binaries (PyInstaller + GitHub Releases),
+  file watcher / daemon, vectorized TF-IDF for large corpora.
 
 ---
 
@@ -296,5 +349,4 @@ PYTHONIOENCODING=utf-8 python tests/bench_scale.py
 
 ## License
 
-No license has been declared yet. Until one is added, all rights are reserved —
-open an issue if you'd like to use this.
+[MIT](LICENSE) © TejesMunde.

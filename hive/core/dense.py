@@ -21,7 +21,10 @@ import time
 from collections import defaultdict
 from typing import Sequence
 
-import numpy as np
+try:
+    import numpy as np
+except ImportError:
+    np = None  # dense path degrades gracefully; caller catches in hybrid_rerank
 
 from hive.core.normalize import normalize_tokens
 

@@ -17,6 +17,9 @@ _TMP = tempfile.mkdtemp(prefix="hive_day10_")
 os.environ["HIVE_DB_PATH"] = os.path.join(_TMP, "day10.db")
 os.environ.setdefault("HIVE_DENSE", "0")
 
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
 from hive import (
     init_db, write_memory, close_task,
     create_handoff, get_handoff, latest_handoff, route_task,

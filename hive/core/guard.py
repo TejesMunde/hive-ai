@@ -1,6 +1,5 @@
 import json
 import sqlite3
-from difflib import SequenceMatcher
 from hive.db.setup import get_connection
 
 MIN_WHAT_WORDS   = 5

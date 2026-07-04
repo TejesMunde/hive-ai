@@ -20,10 +20,13 @@ import json
 import math
 import os
 import random
+import sys
 import time
 from collections import defaultdict
 
 import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from hive.core.normalize import normalize_tokens
 from hive.core.embedder import embed_batch
@@ -124,7 +127,8 @@ def metrics(ranked, expected):
 
 
 def run():
-    data = json.load(open(CORPUS_PATH, encoding="utf-8"))
+    with open(CORPUS_PATH, encoding="utf-8") as f:
+        data = json.load(f)
     real = data["decisions"]
     queries = data["queries"]
     pad = make_distractors(max(K_SWEEP), start_id=1)
