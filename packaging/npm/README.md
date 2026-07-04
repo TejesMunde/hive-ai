@@ -1,4 +1,4 @@
-# hive-mind
+# @thevinod/hive-ai
 
 npm launcher for the [Hive Mind](https://github.com/TejesMunde/hive-ai) Python package — persistent, cross-agent memory for AI coding agents.
 
@@ -9,11 +9,11 @@ npm launcher for the [Hive Mind](https://github.com/TejesMunde/hive-ai) Python p
 ## Install
 
 ```bash
-npm install -g hive-mind
+npm install -g @thevinod/hive-ai
 hive --help
 ```
 
-On first run, it auto-installs the Python package via `pip install --user hive-mind`.
+On first run, it auto-installs the Python package via `pip install --user hive-ai`.
 
 ## Usage
 

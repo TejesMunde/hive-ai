@@ -3,13 +3,13 @@
  * npm launcher for the Python `hive` CLI.
  *
  * Hive Mind is a Python package; this npm package is a thin launcher so people who
- * live in the Node ecosystem can `npm i -g hive-mind` and get the `hive` command.
+ * live in the Node ecosystem can `npm i -g @thevinod/hive-ai` and get the `hive` command.
  * It requires Python >= 3.10 on the machine (Phase A distribution). A future phase
  * may ship standalone binaries so Python is not needed.
  *
  * Behaviour:
  *   1. find a Python >= 3.10 interpreter (python3, then python, then py -3 on Windows)
- *   2. ensure the `hive` package is importable; if not, `pip install --user hive-mind`
+ *   2. ensure the `hive` package is importable; if not, `pip install --user hive-ai`
  *      once, with a clear message
  *   3. exec `python -m hive.cli.main <args>` forwarding stdio + exit code
  *

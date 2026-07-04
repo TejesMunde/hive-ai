@@ -55,17 +55,15 @@ importable `hive` Python package:
 
 ```bash
 # Python (recommended)
-pipx install hive-mind          # isolated, or:
-pip install hive-mind
-
+pipx install hive-ai            # isolated, or:
+pip install hive-ai
 # npm (thin launcher around the Python package — needs Python 3.10+)
-npm install -g hive-mind
+npm install -g @thevinod/hive-ai
 
 # curl
-curl -fsSL https://raw.githubusercontent.com/TejesMunde/hive-mind/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/TejesMunde/hive-ai/main/install.sh | sh
 # Windows PowerShell:
-#   irm https://raw.githubusercontent.com/TejesMunde/hive-mind/main/install.ps1 | iex
-```
+#   irm https://raw.githubusercontent.com/TejesMunde/hive-ai/main/install.ps1 | iex```
 
 > The npm and curl installers bootstrap the Python package, so **Python 3.10+** must
 > be on the machine. (Zero-Python standalone binaries are a planned follow-up.)
@@ -74,7 +72,7 @@ The **semantic (dense) retrieval layer is optional**. Install it as an extra; wi
 it the reader degrades silently to TF-IDF:
 
 ```bash
-pip install "hive-mind[dense]"      # adds numpy + fastembed
+pip install "hive-ai[dense]"        # adds numpy + fastembed
 ```
 
 Verify, then use it:
@@ -93,7 +91,7 @@ init_db()   # idempotent: creates tables + runs migrations
 
 ```bash
 git clone https://github.com/TejesMunde/hive-ai.git
-cd hive-mind
+cd hive-ai
 pip install -e ".[dense]"
 ```
 

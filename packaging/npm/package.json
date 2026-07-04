@@ -1,6 +1,7 @@
 {
-  "name": "hive-mind",
-  "version": "0.1.1",
+  "name": "@thevinod/hive-ai",
+  "version": "0.1.2",
+  "publishConfig": { "access": "public" },
   "description": "Persistent, cross-agent memory for AI coding agents — npm launcher for the Python `hive` CLI.",
   "keywords": ["ai", "agents", "memory", "llm", "claude", "coding-agent", "cli"],
 "homepage": "https://github.com/TejesMunde/hive-ai",
