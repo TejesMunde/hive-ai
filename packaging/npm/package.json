@@ -1,5 +1,5 @@
 {
-  "name": "hive-mind",
+  "name": "hive-ai",
   "version": "0.1.1",
   "description": "Persistent, cross-agent memory for AI coding agents — npm launcher for the Python `hive` CLI.",
   "keywords": ["ai", "agents", "memory", "llm", "claude", "coding-agent", "cli"],
