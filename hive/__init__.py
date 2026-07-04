@@ -1,6 +1,6 @@
 """Hive Mind public API."""
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 from hive.db.setup import init_db, get_connection
 from hive.core.writer import (
